@@ -20,6 +20,7 @@ from .api.models import (
     FileOutlineGenerationRequest, TemplateSelectionRequest,
     TemplateSelectionResponse, PPTScenario
 )
+from .api.v1 import router as v1_router
 from .services.service_instances import get_ppt_service_for_user
 from .services.file_processor import FileProcessor
 from .core.config import ai_config, app_config
@@ -34,11 +35,20 @@ logging.getLogger('sqlalchemy').setLevel(logging.WARNING)
 # Create FastAPI app
 app = FastAPI(
     title="LandPPT API",
-    description="AI-powered PPT Generation REST API - Pure API Mode",
+    description=(
+        "AI-powered PPT Generation REST API\n\n"
+        "## 推荐使用 v1 接口\n\n"
+        "v1 接口支持**异步任务**模式，PPT 生成不阻塞 HTTP 请求：\n\n"
+        "1. `POST /v1/presentations` — 提交生成任务，返回 `job_id`\n"
+        "2. `GET  /v1/jobs/{job_id}` — 轮询状态（pending → running → completed）\n"
+        "3. `GET  /v1/presentations/{project_id}/download?format=html|pdf|pptx` — 下载结果\n\n"
+        "如需上传文档生成 PPT，先调用 `POST /v1/files/upload` 获取 `processed_content`，"
+        "再传给 `POST /v1/presentations` 的 `uploaded_content` 字段。"
+    ),
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
 )
 
 # Add CORS middleware - allow all origins for API mode
@@ -49,6 +59,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Mount v1 API router
+app.include_router(v1_router)
 
 # Service instances - use anonymous user for API-only mode
 ANONYMOUS_USER_ID = app_config.anonymous_user_id
