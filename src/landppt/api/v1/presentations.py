@@ -77,7 +77,7 @@ async def _run_pdf_export(project_id: str, user_id: int) -> dict:
     Requires Playwright (pyppeteer) to be installed and functional.
     """
     # Lazy import to avoid loading web-layer modules at startup.
-    from ...web.route_modules.export_support import _generate_pdf_with_pyppeteer
+    from ...services.export_support import _generate_pdf_with_pyppeteer
     from ...services.pyppeteer_pdf_converter import get_pdf_converter
 
     ppt_service = get_ppt_service_for_user(user_id)
@@ -113,7 +113,7 @@ async def _run_pptx_export(project_id: str, user_id: int) -> dict:
     Requires ENABLE_APRYSE_PPTX_EXPORT=true and a valid APRYSE_LICENSE_KEY.
     Returns the temp file path in the result dict.
     """
-    from ...web.route_modules.export_support import _generate_pdf_with_pyppeteer
+    from ...services.export_support import _generate_pdf_with_pyppeteer
     from ...services.pyppeteer_pdf_converter import get_pdf_converter
     from ...services.pdf_to_pptx_converter import get_pdf_to_pptx_converter
 

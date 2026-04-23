@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import AsyncSessionLocal, async_engine
-from .models import Base, UserMetrics
+from .models import Base
 
 logger = logging.getLogger(__name__)
 
@@ -1071,147 +1071,9 @@ class DatabaseMigration:
             raise
 
     async def _migration_012_up(self, session: AsyncSession):
-        """Migration 012: add user_metrics table and backfill aggregates."""
-        logger.info("Applying migration 012: Adding user_metrics table")
-        try:
-            conn = await session.connection()
-            await conn.run_sync(Base.metadata.create_all, tables=[UserMetrics.__table__], checkfirst=True)
-
-            user_rows = await session.execute(
-                text(
-                    """
-                    SELECT id, created_at, last_login
-                    FROM users
-                    ORDER BY id
-                    """
-                )
-            )
-
-            now = time.time()
-            for user_id, created_at, last_login in user_rows.fetchall():
-                project_stats = await session.execute(
-                    text(
-                        """
-                        SELECT
-                            COUNT(*) AS projects_count,
-                            MAX(created_at) AS last_project_created_at,
-                            MAX(updated_at) AS last_project_updated_at
-                        FROM projects
-                        WHERE user_id = :user_id
-                        """
-                    ),
-                    {"user_id": user_id},
-                )
-                projects_count, last_project_created_at, last_project_updated_at = project_stats.one()
-
-                credit_stats = await session.execute(
-                    text(
-                        """
-                        SELECT
-                            COALESCE(SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END), 0) AS credits_consumed_total,
-                            COALESCE(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS credits_recharged_total,
-                            MAX(CASE WHEN amount < 0 THEN created_at ELSE NULL END) AS last_credit_consumed_at,
-                            MAX(CASE WHEN amount > 0 THEN created_at ELSE NULL END) AS last_credit_recharged_at
-                        FROM credit_transactions
-                        WHERE user_id = :user_id
-                        """
-                    ),
-                    {"user_id": user_id},
-                )
-                (
-                    credits_consumed_total,
-                    credits_recharged_total,
-                    last_credit_consumed_at,
-                    last_credit_recharged_at,
-                ) = credit_stats.one()
-
-                last_active_candidates = [
-                    value
-                    for value in (
-                        last_project_updated_at,
-                        last_credit_consumed_at,
-                        last_credit_recharged_at,
-                        last_login,
-                        created_at,
-                    )
-                    if value is not None
-                ]
-                last_active_at = max(last_active_candidates) if last_active_candidates else now
-
-                existing = await session.execute(
-                    text("SELECT 1 FROM user_metrics WHERE user_id = :user_id LIMIT 1"),
-                    {"user_id": user_id},
-                )
-
-                params = {
-                    "user_id": user_id,
-                    "last_active_at": last_active_at,
-                    "projects_count": int(projects_count or 0),
-                    "credits_consumed_total": int(credits_consumed_total or 0),
-                    "credits_recharged_total": int(credits_recharged_total or 0),
-                    "last_project_created_at": last_project_created_at,
-                    "last_credit_consumed_at": last_credit_consumed_at,
-                    "last_credit_recharged_at": last_credit_recharged_at,
-                    "created_at": float(created_at or now),
-                    "updated_at": now,
-                }
-
-                if existing.first():
-                    await session.execute(
-                        text(
-                            """
-                            UPDATE user_metrics
-                            SET last_active_at = :last_active_at,
-                                projects_count = :projects_count,
-                                credits_consumed_total = :credits_consumed_total,
-                                credits_recharged_total = :credits_recharged_total,
-                                last_project_created_at = :last_project_created_at,
-                                last_credit_consumed_at = :last_credit_consumed_at,
-                                last_credit_recharged_at = :last_credit_recharged_at,
-                                updated_at = :updated_at
-                            WHERE user_id = :user_id
-                            """
-                        ),
-                        params,
-                    )
-                else:
-                    await session.execute(
-                        text(
-                            """
-                            INSERT INTO user_metrics (
-                                user_id,
-                                last_active_at,
-                                projects_count,
-                                credits_consumed_total,
-                                credits_recharged_total,
-                                last_project_created_at,
-                                last_credit_consumed_at,
-                                last_credit_recharged_at,
-                                created_at,
-                                updated_at
-                            ) VALUES (
-                                :user_id,
-                                :last_active_at,
-                                :projects_count,
-                                :credits_consumed_total,
-                                :credits_recharged_total,
-                                :last_project_created_at,
-                                :last_credit_consumed_at,
-                                :last_credit_recharged_at,
-                                :created_at,
-                                :updated_at
-                            )
-                            """
-                        ),
-                        params,
-                    )
-
-            await session.commit()
-            logger.info("Migration 012 completed successfully")
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"Migration 012 failed: {e}")
-            raise
+        """Migration 012: no-op (user_metrics table removed in cleanup)."""
+        logger.info("Migration 012: skipped (user_metrics table no longer needed)")
+        await session.commit()
 
     async def _migration_012_down(self, session: AsyncSession):
         """Migration 012 rollback."""

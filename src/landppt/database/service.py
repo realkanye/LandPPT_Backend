@@ -19,7 +19,15 @@ from ..api.models import (
     PPTProject, TodoBoard, TodoStage, ProjectListResponse,
     PPTGenerationRequest
 )
-from ..auth.request_context import current_user_id, USER_SCOPE_ALL
+USER_SCOPE_ALL = -1
+
+
+class _NullContextVar:
+    def get(self):
+        return None
+
+
+current_user_id = _NullContextVar()
 
 
 class DatabaseService:

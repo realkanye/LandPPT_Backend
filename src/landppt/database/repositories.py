@@ -10,26 +10,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete, and_, func, or_, inspect, text
 from sqlalchemy.orm import selectinload
 
-from .models import Project, TodoBoard, TodoStage, ProjectVersion, SlideData, PPTTemplate, GlobalMasterTemplate, CreditTransaction, RedemptionCode, User, UserConfig, UserMetrics
+from .models import Project, TodoBoard, TodoStage, ProjectVersion, SlideData, PPTTemplate, GlobalMasterTemplate
 from ..api.models import PPTProject, TodoBoard as TodoBoardModel, TodoStage as TodoStageModel
 
 logger = logging.getLogger(__name__)
 
-from ..auth.request_context import current_user_id, USER_SCOPE_ALL
+USER_SCOPE_ALL = -1
 
 
 def _effective_user_id(user_id: Optional[int]) -> Optional[int]:
     """
     Resolve an optional user_id for per-request scoping.
 
-    - If user_id == USER_SCOPE_ALL: disable scoping (admin/system usage).
-    - If user_id is None: use current request-scoped user_id (if any).
+    - If user_id == USER_SCOPE_ALL: disable scoping (system usage).
     - Else: use the provided user_id.
     """
     if user_id == USER_SCOPE_ALL:
         return None
-    if user_id is None:
-        return current_user_id.get()
     return user_id
 
 
@@ -150,77 +147,42 @@ class ProjectRepository:
     
     async def delete(self, project_id: str, user_id: Optional[int] = None) -> bool:
         """Delete project and all related records. If user_id is provided, enforces ownership."""
-        from .models import (
-            TodoStage,
-            TodoBoard,
-            SlideData,
-            ProjectVersion,
-            PPTTemplate,
-            SpeechScript,
-            NarrationAudio,
-        )
-        
         user_id = _effective_user_id(user_id)
-        
-        # First, verify the project exists and user has permission
+
         stmt = select(Project).where(Project.project_id == project_id)
         if user_id is not None:
             stmt = stmt.where(Project.user_id == user_id)
         result = await self.session.execute(stmt)
         project = result.scalar_one_or_none()
-        
+
         if not project:
             return False
-        
+
         try:
-            # Delete related records in order (child tables first)
-            # 1. Delete todo_stages (references todo_boards and projects)
             await self.session.execute(
                 delete(TodoStage).where(TodoStage.project_id == project_id)
             )
-            
-            # 2. Delete todo_boards (references projects)
             await self.session.execute(
                 delete(TodoBoard).where(TodoBoard.project_id == project_id)
             )
-
-            # 3. 删除遗留的 slide_revisions，避免真实数据库中的外键阻塞项目删除
             await self._delete_legacy_slide_revisions(project_id)
-
-            # 4. Delete slides (references projects)
             await self.session.execute(
                 delete(SlideData).where(SlideData.project_id == project_id)
             )
-            
-            # 5. Delete project versions (references projects)
             await self.session.execute(
                 delete(ProjectVersion).where(ProjectVersion.project_id == project_id)
             )
-            
-            # 6. Delete templates (references projects)
             await self.session.execute(
                 delete(PPTTemplate).where(PPTTemplate.project_id == project_id)
             )
-            
-            # 7. Delete speech scripts (references projects)
-            await self.session.execute(
-                delete(SpeechScript).where(SpeechScript.project_id == project_id)
-            )
-            
-            # 8. Delete narration audio cache records (references projects)
-            await self.session.execute(
-                delete(NarrationAudio).where(NarrationAudio.project_id == project_id)
-            )
-
-            # 9. Finally delete the project itself
             await self.session.execute(
                 delete(Project).where(Project.project_id == project_id)
             )
-            
+
             await self.session.commit()
             logger.info(f"Successfully deleted project {project_id} and all related records")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error deleting project {project_id}: {e}")
             await self.session.rollback()
@@ -976,496 +938,3 @@ class GlobalMasterTemplateRepository:
         return result.rowcount > 0
 
 
-class CreditTransactionRepository:
-    """Repository for CreditTransaction operations"""
-    
-    def __init__(self, session: AsyncSession):
-        self.session = session
-    
-    async def create(self, transaction_data: Dict[str, Any]) -> CreditTransaction:
-        """Create a new credit transaction"""
-        transaction = CreditTransaction(**transaction_data)
-        self.session.add(transaction)
-        await self.session.commit()
-        await self.session.refresh(transaction)
-        return transaction
-    
-    async def get_user_transactions(
-        self, 
-        user_id: int, 
-        page: int = 1, 
-        page_size: int = 20,
-        transaction_type: Optional[str] = None
-    ) -> Tuple[List[CreditTransaction], int]:
-        """Get transactions for a user with pagination"""
-        stmt = select(CreditTransaction).where(CreditTransaction.user_id == user_id)
-        count_stmt = select(func.count(CreditTransaction.id)).where(CreditTransaction.user_id == user_id)
-        
-        if transaction_type:
-            stmt = stmt.where(CreditTransaction.transaction_type == transaction_type)
-            count_stmt = count_stmt.where(CreditTransaction.transaction_type == transaction_type)
-        
-        stmt = stmt.order_by(CreditTransaction.created_at.desc())
-        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-        
-        result = await self.session.execute(stmt)
-        count_result = await self.session.execute(count_stmt)
-        
-        return result.scalars().all(), count_result.scalar() or 0
-    
-    async def get_user_stats(self, user_id: int) -> Dict[str, Any]:
-        """Get credit statistics for a user"""
-        # Total consumed
-        consumed_stmt = select(func.sum(CreditTransaction.amount)).where(
-            CreditTransaction.user_id == user_id,
-            CreditTransaction.amount < 0
-        )
-        consumed_result = await self.session.execute(consumed_stmt)
-        total_consumed = abs(consumed_result.scalar() or 0)
-        
-        # Total recharged
-        recharged_stmt = select(func.sum(CreditTransaction.amount)).where(
-            CreditTransaction.user_id == user_id,
-            CreditTransaction.amount > 0
-        )
-        recharged_result = await self.session.execute(recharged_stmt)
-        total_recharged = recharged_result.scalar() or 0
-        
-        # Transaction count
-        count_stmt = select(func.count(CreditTransaction.id)).where(
-            CreditTransaction.user_id == user_id
-        )
-        count_result = await self.session.execute(count_stmt)
-        transaction_count = count_result.scalar() or 0
-        
-        return {
-            "total_consumed": total_consumed,
-            "total_recharged": total_recharged,
-            "transaction_count": transaction_count
-        }
-
-
-class RedemptionCodeRepository:
-    """Repository for RedemptionCode operations"""
-    
-    def __init__(self, session: AsyncSession):
-        self.session = session
-    
-    async def create(self, code_data: Dict[str, Any]) -> RedemptionCode:
-        """Create a new redemption code"""
-        # Generate unique code if not provided
-        if 'code' not in code_data:
-            code_data['code'] = secrets.token_urlsafe(8).upper()
-        
-        code = RedemptionCode(**code_data)
-        self.session.add(code)
-        await self.session.commit()
-        await self.session.refresh(code)
-        return code
-    
-    async def create_batch(self, count: int, credits_amount: int, created_by: int, expires_at: Optional[float] = None, description: Optional[str] = None) -> List[RedemptionCode]:
-        """Create multiple redemption codes at once"""
-        codes = []
-        for _ in range(count):
-            code_data = {
-                'code': secrets.token_urlsafe(8).upper(),
-                'credits_amount': credits_amount,
-                'created_by': created_by,
-                'expires_at': expires_at,
-                'description': description
-            }
-            code = RedemptionCode(**code_data)
-            self.session.add(code)
-            codes.append(code)
-        
-        await self.session.commit()
-        for code in codes:
-            await self.session.refresh(code)
-        return codes
-    
-    async def get_by_code(self, code: str) -> Optional[RedemptionCode]:
-        """Get redemption code by code string"""
-        stmt = select(RedemptionCode).where(RedemptionCode.code == code.upper())
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
-    
-    async def use_code(self, code: str, user_id: int) -> Optional[RedemptionCode]:
-        """Mark a code as used by a user"""
-        redemption_code = await self.get_by_code(code)
-        if not redemption_code or not redemption_code.is_valid():
-            return None
-        
-        redemption_code.is_used = True
-        redemption_code.used_by = user_id
-        redemption_code.used_at = time.time()
-        
-        await self.session.commit()
-        await self.session.refresh(redemption_code)
-        return redemption_code
-    
-    async def list_codes(
-        self, 
-        page: int = 1, 
-        page_size: int = 20,
-        is_used: Optional[bool] = None,
-        created_by: Optional[int] = None,
-        search: Optional[str] = None
-    ) -> Tuple[List[RedemptionCode], int]:
-        """List redemption codes with pagination"""
-        stmt = select(RedemptionCode)
-        count_stmt = select(func.count(RedemptionCode.id))
-        
-        if is_used is not None:
-            stmt = stmt.where(RedemptionCode.is_used == is_used)
-            count_stmt = count_stmt.where(RedemptionCode.is_used == is_used)
-        
-        if created_by is not None:
-            stmt = stmt.where(RedemptionCode.created_by == created_by)
-            count_stmt = count_stmt.where(RedemptionCode.created_by == created_by)
-
-        if search:
-            from sqlalchemy import or_
-            search_filter = or_(
-                RedemptionCode.code.ilike(f"%{search}%"),
-                RedemptionCode.description.ilike(f"%{search}%")
-            )
-            stmt = stmt.where(search_filter)
-            count_stmt = count_stmt.where(search_filter)
-        
-        stmt = stmt.order_by(RedemptionCode.created_at.desc())
-        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-        
-        result = await self.session.execute(stmt)
-        count_result = await self.session.execute(count_stmt)
-        
-        return result.scalars().all(), count_result.scalar() or 0
-    
-    async def delete_code(self, code_id: int) -> bool:
-        """Delete a redemption code (only if unused)"""
-        stmt = delete(RedemptionCode).where(
-            RedemptionCode.id == code_id,
-            RedemptionCode.is_used == False
-        )
-        result = await self.session.execute(stmt)
-        await self.session.commit()
-        return result.rowcount > 0
-
-
-class UserRepository:
-    """Repository for User operations (async version)"""
-    
-    def __init__(self, session: AsyncSession):
-        self.session = session
-    
-    async def get_by_id(self, user_id: int) -> Optional[User]:
-        """Get user by ID"""
-        stmt = select(User).where(User.id == user_id).options(selectinload(User.metrics))
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
-    
-    async def update_credits_balance(self, user_id: int, new_balance: int) -> bool:
-        """Update user's credits balance"""
-        stmt = update(User).where(User.id == user_id).values(credits_balance=new_balance)
-        result = await self.session.execute(stmt)
-        await self.session.commit()
-        return result.rowcount > 0
-    
-    async def add_credits(self, user_id: int, amount: int) -> Optional[int]:
-        """Add credits to user balance and return new balance"""
-        user = await self.get_by_id(user_id)
-        if not user:
-            return None
-        
-        new_balance = user.credits_balance + amount
-        if new_balance < 0:
-            return None  # Cannot go negative
-        
-        await self.update_credits_balance(user_id, new_balance)
-        return new_balance
-    
-    async def list_users(
-        self, 
-        page: int = 1, 
-        page_size: int = 20,
-        is_active: Optional[bool] = None,
-        is_admin: Optional[bool] = None,
-        search: Optional[str] = None,
-        sort_by: str = "created_at",
-        sort_dir: str = "desc",
-    ) -> Tuple[List[User], int]:
-        """List users with pagination"""
-        from sqlalchemy import or_
-        
-        stmt = select(User).options(selectinload(User.metrics))
-        count_stmt = select(func.count(User.id))
-        
-        if is_active is not None:
-            stmt = stmt.where(User.is_active == is_active)
-            count_stmt = count_stmt.where(User.is_active == is_active)
-
-        if is_admin is not None:
-            stmt = stmt.where(User.is_admin == is_admin)
-            count_stmt = count_stmt.where(User.is_admin == is_admin)
-        
-        if search:
-            search_filter = or_(
-                User.username.ilike(f"%{search}%"),
-                User.email.ilike(f"%{search}%")
-            )
-            stmt = stmt.where(search_filter)
-            count_stmt = count_stmt.where(search_filter)
-
-        metric_sorts = {
-            "projects_count": func.coalesce(UserMetrics.projects_count, 0),
-            "credits_consumed_total": func.coalesce(UserMetrics.credits_consumed_total, 0),
-            "last_active_at": UserMetrics.last_active_at,
-        }
-        sort_key = (sort_by or "").strip()
-        if sort_key in metric_sorts:
-            stmt = stmt.outerjoin(UserMetrics, UserMetrics.user_id == User.id)
-
-        allowed_sorts = {
-            "id": User.id,
-            "username": User.username,
-            "email": User.email,
-            "is_active": User.is_active,
-            "is_admin": User.is_admin,
-            "credits_balance": User.credits_balance,
-            "created_at": User.created_at,
-            "last_login": User.last_login,
-            **metric_sorts,
-        }
-
-        sort_col = allowed_sorts.get(sort_key, User.created_at)
-        direction = (sort_dir or "desc").strip().lower()
-        direction = "asc" if direction == "asc" else "desc"
-        order_expr = sort_col.asc() if direction == "asc" else sort_col.desc()
-        if sort_key in {"email", "last_login", "last_active_at"}:
-            order_expr = order_expr.nulls_last()
-
-        stmt = stmt.order_by(order_expr, User.id.desc())
-        stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-        
-        result = await self.session.execute(stmt)
-        count_result = await self.session.execute(count_stmt)
-        
-        return result.scalars().all(), count_result.scalar() or 0
-
-
-class UserConfigRepository:
-    """Repository for user-specific configuration operations"""
-    
-    def __init__(self, session: AsyncSession):
-        self.session = session
-    
-    async def get_config(self, user_id: Optional[int], key: str) -> Optional[str]:
-        """
-        Get config value for user, falling back to system default.
-        
-        Args:
-            user_id: User ID (None = system default only)
-            key: Configuration key
-            
-        Returns:
-            Config value or None
-        """
-        # First try user-specific config if user_id provided
-        if user_id is not None:
-            stmt = select(UserConfig).where(
-                UserConfig.user_id == user_id,
-                UserConfig.config_key == key
-            )
-            result = await self.session.execute(stmt)
-            config = result.scalar_one_or_none()
-            if config and config.config_value is not None:
-                return config.config_value
-        
-        # Fall back to system default (user_id = NULL)
-        stmt = select(UserConfig).where(
-            UserConfig.user_id.is_(None),
-            UserConfig.config_key == key
-        )
-        result = await self.session.execute(stmt)
-        config = result.scalar_one_or_none()
-        return config.config_value if config else None
-    
-    async def get_all_configs(self, user_id: Optional[int] = None) -> Dict[str, Dict[str, Any]]:
-        """
-        Get all configs for user, merged with system defaults.
-        
-        Returns dict of {key: {value, type, category}}
-        """
-        configs = {}
-        
-        # First get all system defaults
-        stmt = select(UserConfig).where(UserConfig.user_id.is_(None))
-        result = await self.session.execute(stmt)
-        system_configs = result.scalars().all()
-        
-        for config in system_configs:
-            configs[config.config_key] = {
-                "value": config.config_value,
-                "type": config.config_type,
-                "category": config.category,
-                "is_user_override": False
-            }
-        
-        # Then overlay with user-specific configs
-        if user_id is not None:
-            stmt = select(UserConfig).where(UserConfig.user_id == user_id)
-            result = await self.session.execute(stmt)
-            user_configs = result.scalars().all()
-            
-            for config in user_configs:
-                configs[config.config_key] = {
-                    "value": config.config_value,
-                    "type": config.config_type,
-                    "category": config.category,
-                    "is_user_override": True
-                }
-        
-        return configs
-    
-    async def get_configs_by_category(self, user_id: Optional[int], category: str) -> Dict[str, str]:
-        """Get configs for a specific category, with user overrides"""
-        all_configs = await self.get_all_configs(user_id)
-        return {
-            key: info["value"]
-            for key, info in all_configs.items()
-            if info["category"] == category
-        }
-    
-    async def set_config(self, user_id: Optional[int], key: str, value: str,
-                        config_type: str = "text", category: str = "general") -> bool:
-        """
-        Set config value for user (upsert).
-        
-        Args:
-            user_id: User ID (None = system default)
-            key: Configuration key
-            value: Configuration value
-            config_type: Type of config (text, password, number, boolean, json)
-            category: Category of config
-        """
-        try:
-            # Check if config exists
-            if user_id is not None:
-                stmt = select(UserConfig).where(
-                    UserConfig.user_id == user_id,
-                    UserConfig.config_key == key
-                )
-            else:
-                stmt = select(UserConfig).where(
-                    UserConfig.user_id.is_(None),
-                    UserConfig.config_key == key
-                )
-            
-            result = await self.session.execute(stmt)
-            existing = result.scalar_one_or_none()
-            
-            if existing:
-                # Update existing
-                existing.config_value = value
-                existing.config_type = config_type
-                existing.category = category
-                existing.updated_at = time.time()
-            else:
-                # Create new
-                new_config = UserConfig(
-                    user_id=user_id,
-                    config_key=key,
-                    config_value=value,
-                    config_type=config_type,
-                    category=category
-                )
-                self.session.add(new_config)
-            
-            await self.session.flush()
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error setting config {key} for user {user_id}: {e}")
-            return False
-    
-    async def delete_config(self, user_id: int, key: str) -> bool:
-        """
-        Delete user-specific config (reverts to system default).
-        
-        Only deletes user overrides, not system defaults.
-        """
-        if user_id is None:
-            logger.warning("Cannot delete system config via delete_config")
-            return False
-        
-        try:
-            stmt = delete(UserConfig).where(
-                UserConfig.user_id == user_id,
-                UserConfig.config_key == key
-            )
-            result = await self.session.execute(stmt)
-            await self.session.flush()
-            return result.rowcount > 0
-        except Exception as e:
-            logger.error(f"Error deleting config {key} for user {user_id}: {e}")
-            return False
-    
-    async def reset_user_configs(self, user_id: int, category: Optional[str] = None) -> int:
-        """
-        Reset all user configs (or a category) to system defaults.
-        
-        Returns number of deleted configs.
-        """
-        if user_id is None:
-            return 0
-        
-        try:
-            stmt = delete(UserConfig).where(UserConfig.user_id == user_id)
-            if category:
-                stmt = stmt.where(UserConfig.category == category)
-            
-            result = await self.session.execute(stmt)
-            await self.session.flush()
-            return result.rowcount
-        except Exception as e:
-            logger.error(f"Error resetting configs for user {user_id}: {e}")
-            return 0
-    
-    async def copy_system_defaults_to_user(self, user_id: int) -> int:
-        """
-        Copy all system default configs to user as overrides.
-        
-        Useful for initializing new user configs.
-        """
-        if user_id is None:
-            return 0
-        
-        try:
-            # Get all system defaults
-            stmt = select(UserConfig).where(UserConfig.user_id.is_(None))
-            result = await self.session.execute(stmt)
-            system_configs = result.scalars().all()
-            
-            count = 0
-            for config in system_configs:
-                # Check if user already has this config
-                check_stmt = select(UserConfig).where(
-                    UserConfig.user_id == user_id,
-                    UserConfig.config_key == config.config_key
-                )
-                check_result = await self.session.execute(check_stmt)
-                if check_result.scalar_one_or_none() is None:
-                    new_config = UserConfig(
-                        user_id=user_id,
-                        config_key=config.config_key,
-                        config_value=config.config_value,
-                        config_type=config.config_type,
-                        category=config.category
-                    )
-                    self.session.add(new_config)
-                    count += 1
-            
-            await self.session.flush()
-            return count
-        except Exception as e:
-            logger.error(f"Error copying configs for user {user_id}: {e}")
-            return 0

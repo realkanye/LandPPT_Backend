@@ -15,7 +15,12 @@ from datetime import datetime, timedelta
 from ..models import (
     ImageInfo, ImageCacheInfo, ImageSourceType, ImageProvider
 )
-from ....auth.request_context import current_user_id
+class _NullContextVar:
+    def get(self):
+        return None
+
+
+current_user_id = _NullContextVar()
 
 logger = logging.getLogger(__name__)
 
