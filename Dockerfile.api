@@ -1,0 +1,103 @@
+# LandPPT API-only Docker Image
+# Pure API mode with no authentication
+
+FROM python:3.11-slim-bookworm AS builder
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install --no-cache-dir uv
+
+# Create venv
+RUN uv venv /opt/venv --python python3.11
+ENV VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:$PATH
+
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+COPY src/ ./src/
+
+# Install dependencies
+RUN uv sync --active --no-dev --frozen --extra-index-url=https://pypi.apryse.com
+
+# Install Playwright browsers
+RUN mkdir -p /opt/playwright-browsers
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+RUN python -m playwright install chromium
+
+# Production stage
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app/src:/opt/venv/lib/python3.11/site-packages \
+    PATH=/opt/venv/bin:$PATH \
+    PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    poppler-utils \
+    libmagic1 \
+    ca-certificates \
+    curl \
+    libgomp1 \
+    libatomic1 \
+    fonts-liberation \
+    fonts-noto-cjk \
+    fontconfig \
+    # Playwright/Chromium dependencies
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
+    libpango-1.0-0 \
+    libcairo2 \
+    && fc-cache -fv \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Copy from builder
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /opt/playwright-browsers /opt/playwright-browsers
+
+WORKDIR /app
+
+# Copy application files
+COPY run_api.py ./
+COPY src/ ./src/
+COPY .env.api ./.env
+
+# Create directories
+RUN mkdir -p temp uploads data research_reports \
+    && chmod -R 755 temp uploads data research_reports
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=2 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Set API-only mode
+ENV DISABLE_AUTH=true
+ENV API_ONLY_MODE=true
+
+# Run the API server
+CMD ["python", "run_api.py"]
