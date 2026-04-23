@@ -44,7 +44,7 @@ def main():
 
     # Configuration
     config = {
-        "app": "landppt.main:app",
+        "app": "landppt.main_api:app",
         "host": host,
         "port": port,
         "reload": reload,
