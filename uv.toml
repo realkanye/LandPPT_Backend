@@ -1,10 +1,7 @@
 # uv configuration file for LandPPT
 
-# Use Tsinghua mirror for faster downloads in China
-index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
-
-# Extra index URLs for additional package sources
-extra-index-url = ["https://pypi.apryse.com"]
+# Use the default PyPI index
+index-url = "https://pypi.org/simple"
 
 # Use the first index (faster)
 index-strategy = "first-index"

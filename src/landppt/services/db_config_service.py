@@ -287,28 +287,6 @@ class DatabaseConfigService:
 
         return config
 
-    def _load_db_configs_sync(self, session, user_id: Optional[int]) -> Dict[str, Dict[str, Any]]:
-        """Load raw config rows for one scope using the sync SQLAlchemy session."""
-        from sqlalchemy import select
-
-        from ..database.models import UserConfig
-
-        stmt = select(UserConfig)
-        if user_id is None:
-            stmt = stmt.where(UserConfig.user_id.is_(None))
-        else:
-            stmt = stmt.where(UserConfig.user_id == user_id)
-
-        result = session.execute(stmt)
-        configs: Dict[str, Dict[str, Any]] = {}
-        for item in result.scalars().all():
-            configs[item.config_key] = {
-                "value": item.config_value,
-                "type": item.config_type,
-                "category": item.category,
-            }
-        return configs
-    
     async def get_all_config(self, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Get all configuration values for a user"""
         from ..database.database import AsyncSessionLocal
@@ -324,14 +302,9 @@ class DatabaseConfigService:
         return self._resolve_config_values(db_configs_user, db_configs_system)
 
     def get_all_config_sync(self, user_id: Optional[int] = None) -> Dict[str, Any]:
-        """Get all configuration values for a user using the sync database session."""
-        from ..database.database import SessionLocal
-
-        with SessionLocal() as session:
-            db_configs_user = self._load_db_configs_sync(session, user_id)
-            db_configs_system = {} if user_id is None else self._load_db_configs_sync(session, None)
-
-        return self._resolve_config_values(db_configs_user, db_configs_system)
+        """Get all configuration values for a user (sync wrapper around async version)."""
+        import asyncio
+        return asyncio.run(self.get_all_config(user_id))
     
     async def get_config_by_category(self, category: str, user_id: Optional[int] = None) -> Dict[str, Any]:
         """Get configuration values by category for a user"""
@@ -491,56 +464,19 @@ class DatabaseConfigService:
             return self._convert_type(value, schema["type"])
 
     def get_config_value_sync(self, key: str, user_id: Optional[int] = None) -> Any:
-        """Get a single config value for a user using the sync database session."""
-        from sqlalchemy import select
-
-        from ..database.database import SessionLocal
-        from ..database.models import UserConfig
-
-        if key in self.SYSTEM_ONLY_KEYS:
-            env_key = key.upper()
-            default = self.config_schema.get(key, {}).get("default", "")
-            return os.getenv(env_key, default)
-
-        schema = self.config_schema.get(key, {"type": "text"})
-        effective_user_id = None if schema.get("admin_only", False) else user_id
-
-        def _query_value(session, scope_user_id: Optional[int]):
-            stmt = select(UserConfig.config_value).where(UserConfig.config_key == key)
-            if scope_user_id is None:
-                stmt = stmt.where(UserConfig.user_id.is_(None))
-            else:
-                stmt = stmt.where(UserConfig.user_id == scope_user_id)
-            return session.execute(stmt).scalar_one_or_none()
-
-        with SessionLocal() as session:
-            value = _query_value(session, effective_user_id)
-            if value is None and effective_user_id is not None:
-                value = _query_value(session, None)
-
-        if value is None:
-            value = self.config_schema.get(key, {}).get("default", "")
-
-        return self._convert_type(value, schema["type"])
+        """Get a single config value for a user (sync wrapper around async version)."""
+        import asyncio
+        return asyncio.run(self.get_config_value(key, user_id))
 
     async def is_user_override(self, user_id: int, key: str) -> bool:
         """
         Return True if the given key is explicitly set for the user (not inherited from system defaults).
-
-        Note: This checks DB storage only (not env/schema fallbacks).
         """
-        from sqlalchemy import select
+        from ..database.repositories import UserConfigRepository
 
-        from ..database.database import AsyncSessionLocal
-        from ..database.models import UserConfig
-
-        async with AsyncSessionLocal() as session:
-            stmt = select(UserConfig.id).where(
-                UserConfig.user_id == user_id,
-                UserConfig.config_key == key,
-            )
-            result = await session.execute(stmt)
-            return result.scalar_one_or_none() is not None
+        repo = UserConfigRepository()
+        value = await repo.get_config(user_id, key)
+        return value is not None
     
     def get_config_schema(self, include_admin_only: bool = True) -> Dict[str, Any]:
         """Get configuration schema, optionally excluding admin-only keys/categories."""

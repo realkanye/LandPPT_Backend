@@ -128,8 +128,8 @@ async def run_startup_initialization() -> bool:
             return False
 
         logger.info(
-            "Startup initialization: initializing database (configured=%s)",
-            getattr(app_config, "database_url", ""),
+            "Startup initialization: initializing MongoDB (configured=%s)",
+            getattr(app_config, "mongodb_url", "mongodb://localhost:27017/landppt"),
         )
         await init_db()
         logger.info("Startup initialization: database initialized successfully")

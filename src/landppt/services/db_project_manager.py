@@ -7,7 +7,6 @@ import time
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..api.models import (
     PPTProject, TodoBoard, TodoStage, ProjectListResponse,

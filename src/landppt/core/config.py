@@ -544,8 +544,8 @@ class AppConfig(BaseSettings):
     debug: bool = Field(default=True, env="DEBUG")
     reload: bool = Field(default=True, env="RELOAD")
     
-    # Database Configuration - default to SQLite for standalone/local startup
-    database_url: str = Field(default="sqlite:///./landppt.db", env="DATABASE_URL")
+    # Database Configuration — MongoDB
+    mongodb_url: str = Field(default="mongodb://localhost:27017/landppt", env="MONGODB_URL")
     auto_migrate_on_startup: bool = Field(default=True, env="LANDPPT_AUTO_MIGRATE_ON_STARTUP")
     auto_migrate_fail_fast: bool = Field(default=True, env="LANDPPT_AUTO_MIGRATE_FAIL_FAST")
     auto_migrate_lock_timeout_seconds: int = Field(default=300, env="LANDPPT_AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS")

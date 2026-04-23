@@ -59,6 +59,7 @@ def __getattr__(name: str) -> Any:
         "ProjectVersionRepository",
         "SlideDataRepository",
         "PPTTemplateRepository",
+        "UserConfigRepository",
     }:
         module = import_module(".repositories", __name__)
         return getattr(module, name)

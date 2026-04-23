@@ -34,12 +34,9 @@ dependencies = [
     "python-docx>=1.1.0",
     "pypdf2>=3.0.1",
     "requests>=2.31.0",
-    # Database libraries
-    "sqlalchemy>=2.0.0",
-    "alembic>=1.13.0",
-    "aiosqlite>=0.19.0",
-    "asyncpg>=0.29.0", # PostgreSQL async driver
-    "psycopg2-binary>=2.9.9", # PostgreSQL sync driver (bundled libpq)
+    # Database libraries — MongoDB
+    "motor>=3.3.0",   # async MongoDB driver
+    "beanie>=1.26.0", # MongoDB ODM (Pydantic v2 compatible)
     # Cache library
     "valkey>=6.0.0", # Valkey (Redis-compatible) cache
     # AI and LLM libraries
@@ -67,7 +64,6 @@ dependencies = [
     "tavily-python>=0.7.8",
     "markitdown[all]>=0.1.2",
     "playwright>=1.40.0",
-    "apryse-sdk>=11.6.0",
     "langchain-community>=0.3.27",
     "edge-tts>=6.1.0",
     "resend>=2.21.0",
