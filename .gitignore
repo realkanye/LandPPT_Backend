@@ -16,8 +16,11 @@ requires.md
 prompts.md
 WARP.md
 CLAUDE.md
+# Ignore all .env variants, but keep *.example templates
 .env
-.env.bak
+.env.*
+!.env.example
+!.env.*.example
 .pytest_cache/
 .data
 .uploads
