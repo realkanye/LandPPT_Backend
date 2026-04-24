@@ -19,13 +19,7 @@ on:
       - 'pyproject.toml'
       - 'uv.lock'
       - '.github/workflows/docker-build.yml'
-  
-  # 在 PR 时进行构建测试（不推送）
-  pull_request:
-    branches:
-      - main
-      - master
-  
+
   # 手动触发
   workflow_dispatch:
     inputs:
