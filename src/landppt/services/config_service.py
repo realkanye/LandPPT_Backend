@@ -136,7 +136,7 @@ class ConfigService:
             "max_file_size": {"type": "number", "category": "app_config", "default": "10485760"},
             "upload_dir": {"type": "text", "category": "app_config", "default": "uploads"},
             "cache_ttl": {"type": "number", "category": "app_config", "default": "3600"},
-            "database_url": {"type": "text", "category": "app_config", "default": "sqlite:///./landppt.db"},
+            "mongodb_url": {"type": "text", "category": "app_config", "default": "mongodb://localhost:27017/landppt"},
 
             # Image Service Configuration
             "enable_image_service": {"type": "boolean", "category": "image_service", "default": "false"},
