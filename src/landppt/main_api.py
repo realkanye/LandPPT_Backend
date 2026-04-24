@@ -5,7 +5,7 @@ FastAPI-based REST API for PPT generation functionality
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse
 import uvicorn
 import asyncio
 import logging

@@ -5,7 +5,7 @@ Configuration management service for LandPPT
 import os
 import json
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pathlib import Path
 from dotenv import load_dotenv, set_key, unset_key
 
@@ -232,24 +232,18 @@ class ConfigService:
     def get_config_by_category(self, category: str) -> Dict[str, Any]:
         """Get configuration values by category"""
         config = {}
-        
         for key, schema in self.config_schema.items():
-            if schema["category"] == category:
+            if schema.get("category") == category:
                 env_key = key.upper()
                 value = os.getenv(env_key)
-                
                 if value is None:
                     value = schema.get("default", "")
-                
-                # Convert boolean strings
                 if schema["type"] == "boolean":
                     if isinstance(value, str):
                         value = value.lower() in ("true", "1", "yes", "on")
-                
                 config[key] = value
-        
         return config
-    
+
     def update_config(self, config: Dict[str, Any]) -> bool:
         """Update configuration values"""
         try:
@@ -349,139 +343,13 @@ class ConfigService:
             logger.error(f"Failed to reload application configuration: {e}")
 
     def _reload_image_config(self):
-        """Reload image service configuration"""
+        """Reload image service configuration from environment variables."""
         try:
             from ..services.image.config.image_config import image_config
-
-            # 重新加载环境变量配置
             image_config._load_env_config()
-
-
-            # 更新Gemini图片生成配置
-            gemini_updates = {}
-            if 'gemini_image_api_key' in current_config and current_config['gemini_image_api_key']:
-                gemini_updates['api_key'] = current_config['gemini_image_api_key']
-            if 'gemini_image_api_base' in current_config and current_config['gemini_image_api_base']:
-                gemini_updates['api_base'] = current_config['gemini_image_api_base']
-            if 'gemini_image_model' in current_config and current_config['gemini_image_model']:
-                gemini_updates['model'] = current_config['gemini_image_model']
-
-            if gemini_updates:
-                image_config.update_config({'gemini': gemini_updates})
-
-            # 更新OpenAI图片生成配置
-            openai_image_updates = {}
-            if 'openai_image_api_key' in current_config and current_config['openai_image_api_key']:
-                openai_image_updates['api_key'] = current_config['openai_image_api_key']
-            if 'openai_image_api_base' in current_config and current_config['openai_image_api_base']:
-                openai_image_updates['api_base'] = current_config['openai_image_api_base']
-            if 'openai_image_model' in current_config and current_config['openai_image_model']:
-                openai_image_updates['model'] = current_config['openai_image_model']
-            if 'openai_image_quality' in current_config and current_config['openai_image_quality']:
-                openai_image_updates['default_quality'] = current_config['openai_image_quality']
-
-            if openai_image_updates:
-                image_config.update_config({'openai_image': openai_image_updates})
-
             logger.info("Image service configuration reloaded")
         except Exception as e:
             logger.error(f"Failed to reload image service configuration: {e}")
-
-    def update_config_by_category(self, category: str, config: Dict[str, Any]) -> bool:
-        """Update configuration values for a specific category"""
-        # Filter config to only include keys from the specified category
-        filtered_config = {}
-        
-        for key, value in config.items():
-            if key in self.config_schema and self.config_schema[key]["category"] == category:
-                filtered_config[key] = value
-        
-        return self.update_config(filtered_config)
-    
-    def get_config_schema(self) -> Dict[str, Any]:
-        """Get configuration schema"""
-        return self.config_schema
-    
-    def validate_config(self, config: Dict[str, Any]) -> Dict[str, List[str]]:
-        """Validate configuration values"""
-        errors = {}
-        
-        for key, value in config.items():
-            if key not in self.config_schema:
-                if "unknown" not in errors:
-                    errors["unknown"] = []
-                errors["unknown"].append(f"Unknown configuration key: {key}")
-                continue
-            
-            schema = self.config_schema[key]
-            field_errors = []
-            
-            # Type validation
-            if schema["type"] == "number":
-                try:
-                    num_value = float(value)
-                    # Special validation for access_token_expire_minutes - allow 0 for never expire
-                    if key == "access_token_expire_minutes" and num_value < 0:
-                        field_errors.append(f"{key} must be 0 (never expire) or a positive number")
-                except (ValueError, TypeError):
-                    field_errors.append(f"{key} must be a number")
-            
-            elif schema["type"] == "boolean":
-                if isinstance(value, str):
-                    if value.lower() not in ("true", "false", "1", "0", "yes", "no", "on", "off"):
-                        field_errors.append(f"{key} must be a boolean value")
-            
-            elif schema["type"] == "url":
-                if value and not (value.startswith("http://") or value.startswith("https://")):
-                    field_errors.append(f"{key} must be a valid URL")
-            
-            if field_errors:
-                errors[key] = field_errors
-        
-        return errors
-    
-    def reset_to_defaults(self, category: Optional[str] = None) -> bool:
-        """Reset configuration to default values"""
-        try:
-            config_to_reset = {}
-            
-            for key, schema in self.config_schema.items():
-                if category is None or schema["category"] == category:
-                    default_value = schema.get("default", "")
-                    config_to_reset[key] = default_value
-            
-            return self.update_config(config_to_reset)
-            
-        except Exception as e:
-            logger.error(f"Failed to reset configuration: {e}")
-            return False
-    
-    def backup_config(self, backup_file: str) -> bool:
-        """Backup current configuration"""
-        try:
-            config = self.get_all_config()
-            
-            with open(backup_file, 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            logger.info(f"Configuration backed up to {backup_file}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to backup configuration: {e}")
-            return False
-    
-    def restore_config(self, backup_file: str) -> bool:
-        """Restore configuration from backup"""
-        try:
-            with open(backup_file, 'r') as f:
-                config = json.load(f)
-            
-            return self.update_config(config)
-            
-        except Exception as e:
-            logger.error(f"Failed to restore configuration: {e}")
-            return False
 
 
 # Global config service instance

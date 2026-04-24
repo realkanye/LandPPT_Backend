@@ -154,17 +154,6 @@ class DatabaseConfigService:
             "upload_dir": {"type": "text", "category": "app_config", "default": "uploads"},
             "cache_ttl": {"type": "number", "category": "app_config", "default": "3600"},
 
-            # OAuth Login Configuration
-            "github_oauth_enabled": {"type": "boolean", "category": "oauth_settings", "default": "false", "admin_only": True},
-            "github_client_id": {"type": "text", "category": "oauth_settings", "default": "", "admin_only": True},
-            "github_client_secret": {"type": "password", "category": "oauth_settings", "default": "", "admin_only": True},
-            "github_callback_url": {"type": "url", "category": "oauth_settings", "default": "", "admin_only": True},
-            "github_callback_use_request_host": {"type": "boolean", "category": "oauth_settings", "default": "false", "admin_only": True},
-            "linuxdo_oauth_enabled": {"type": "boolean", "category": "oauth_settings", "default": "false", "admin_only": True},
-            "linuxdo_client_id": {"type": "text", "category": "oauth_settings", "default": "", "admin_only": True},
-            "linuxdo_client_secret": {"type": "password", "category": "oauth_settings", "default": "", "admin_only": True},
-            "linuxdo_callback_url": {"type": "url", "category": "oauth_settings", "default": "", "admin_only": True},
-
             # Image Service Configuration
             "enable_image_service": {"type": "boolean", "category": "image_service", "default": "false"},
             "enable_local_images": {"type": "boolean", "category": "image_service", "default": "true"},
@@ -417,25 +406,6 @@ class DatabaseConfigService:
             logger.error(f"Failed to reload services after config update: {e}")
             import traceback
             logger.error(f"Reload traceback: {traceback.format_exc()}")
-    
-    async def reset_user_config(self, user_id: int, category: Optional[str] = None) -> bool:
-        """Reset user config to system defaults"""
-        from ..database.database import AsyncSessionLocal
-        from ..database.repositories import UserConfigRepository
-        
-        if user_id is None:
-            return False
-        
-        try:
-            async with AsyncSessionLocal() as session:
-                repo = UserConfigRepository(session)
-                count = await repo.reset_user_configs(user_id, category)
-                await session.commit()
-                logger.info(f"Reset {count} configs for user {user_id}")
-                return True
-        except Exception as e:
-            logger.error(f"Failed to reset config for user {user_id}: {e}")
-            return False
     
     async def get_config_value(self, key: str, user_id: Optional[int] = None) -> Any:
         """Get a single config value for a user"""
