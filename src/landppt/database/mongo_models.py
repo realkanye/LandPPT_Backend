@@ -191,3 +191,303 @@ class UserConfigDocument(Document):
             IndexModel([("user_id", ASCENDING), ("config_key", ASCENDING)], unique=True),
             IndexModel([("user_id", ASCENDING)]),
         ]
+
+
+class UserDocument(Document):
+    """User document model."""
+
+    id: Optional[int] = None  # Integer primary key
+    username: str
+    password_hash: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    avatar: Optional[str] = None
+    is_active: bool = True
+    is_admin: bool = False
+    credits_balance: int = 0
+    created_at: float = Field(default_factory=time.time)
+    last_login: Optional[float] = None
+    register_ip: Optional[str] = None
+    last_login_ip: Optional[str] = None
+    registration_channel: Optional[str] = None
+    invite_code_id: Optional[int] = None
+    github_id: Optional[str] = None
+    linuxdo_id: Optional[str] = None
+    oauth_provider: Optional[str] = None
+
+    class Settings:
+        name = "users"
+        indexes = [
+            IndexModel([("username", ASCENDING)], unique=True),
+            IndexModel([("email", ASCENDING)], unique=True, partialFilterExpression={"email": {"$exists": True}}),
+            IndexModel([("github_id", ASCENDING)], unique=True, partialFilterExpression={"github_id": {"$exists": True}}),
+            IndexModel([("linuxdo_id", ASCENDING)], unique=True, partialFilterExpression={"linuxdo_id": {"$exists": True}}),
+        ]
+
+
+class UserSessionDocument(Document):
+    """User session document model."""
+
+    session_id: str
+    user_id: int
+    access_token: str
+    refresh_token: Optional[str] = None
+    expires_at: float
+    created_at: float = Field(default_factory=time.time)
+    last_used_at: Optional[float] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    is_revoked: bool = False
+
+    class Settings:
+        name = "user_sessions"
+        indexes = [
+            IndexModel([("session_id", ASCENDING)], unique=True),
+            IndexModel([("access_token", ASCENDING)], unique=True),
+            IndexModel([("user_id", ASCENDING)]),
+            IndexModel([("expires_at", ASCENDING)]),
+        ]
+
+
+class UserAPIKeyDocument(Document):
+    """User API key document model."""
+
+    id: Optional[int] = None
+    user_id: int
+    key_name: str
+    key_hash: str
+    prefix: str
+    permissions: List[str] = Field(default_factory=list)
+    is_active: bool = True
+    created_at: float = Field(default_factory=time.time)
+    last_used_at: Optional[float] = None
+    expires_at: Optional[float] = None
+    usage_count: int = 0
+
+    class Settings:
+        name = "user_api_keys"
+        indexes = [
+            IndexModel([("key_hash", ASCENDING)], unique=True),
+            IndexModel([("user_id", ASCENDING)]),
+            IndexModel([("user_id", ASCENDING), ("key_name", ASCENDING)], unique=True),
+        ]
+
+
+class CreditTransactionDocument(Document):
+    """Credit transaction document model."""
+
+    id: Optional[int] = None
+    user_id: int
+    amount: int
+    balance_after: int
+    transaction_type: str
+    description: Optional[str] = None
+    reference_id: Optional[str] = None
+    created_at: float = Field(default_factory=time.time)
+
+    class Settings:
+        name = "credit_transactions"
+        indexes = [
+            IndexModel([("user_id", ASCENDING)]),
+            IndexModel([("created_at", DESCENDING)]),
+            IndexModel([("transaction_type", ASCENDING)]),
+        ]
+
+
+class RedemptionCodeDocument(Document):
+    """Redemption code document model."""
+
+    id: Optional[int] = None
+    code: str
+    credits: int
+    is_used: bool = False
+    used_by: Optional[int] = None
+    used_at: Optional[float] = None
+    created_at: float = Field(default_factory=time.time)
+    expires_at: Optional[float] = None
+
+    class Settings:
+        name = "redemption_codes"
+        indexes = [
+            IndexModel([("code", ASCENDING)], unique=True),
+            IndexModel([("is_used", ASCENDING)]),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# NarrationAudioDocument
+# ---------------------------------------------------------------------------
+
+class NarrationAudioDocument(Document):
+    """Narration audio cache document."""
+
+    id: Optional[int] = None
+    project_id: str
+    slide_index: int
+    language: str = "zh"
+    provider: str
+    voice: str
+    rate: str
+    audio_format: str
+    content_hash: str
+    file_path: str
+    duration_ms: Optional[int] = None
+    cues_json: Optional[str] = None
+    created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)
+
+    class Settings:
+        name = "narration_audio"
+        indexes = [
+            IndexModel(
+                [
+                    ("project_id", ASCENDING),
+                    ("slide_index", ASCENDING),
+                    ("language", ASCENDING),
+                    ("provider", ASCENDING),
+                    ("voice", ASCENDING),
+                    ("rate", ASCENDING),
+                    ("content_hash", ASCENDING),
+                ],
+                unique=True,
+            ),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# DailyCheckInDocument
+# ---------------------------------------------------------------------------
+
+class DailyCheckInDocument(Document):
+    """Daily check-in record."""
+
+    id: Optional[int] = None
+    user_id: int
+    checkin_date: str  # YYYY-MM-DD format
+    reward_points: int = 0
+    created_at: float = Field(default_factory=time.time)
+
+    class Settings:
+        name = "daily_checkins"
+        indexes = [
+            IndexModel([("user_id", ASCENDING), ("checkin_date", ASCENDING)], unique=True),
+            IndexModel([("checkin_date", ASCENDING)]),
+        ]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "checkin_date": self.checkin_date,
+            "reward_points": self.reward_points,
+            "created_at": self.created_at,
+        }
+
+
+# ---------------------------------------------------------------------------
+# InviteCodeDocument
+# ---------------------------------------------------------------------------
+
+class InviteCodeDocument(Document):
+    """Registration invite code."""
+
+    id: Optional[int] = None
+    code: str
+    channel: str
+    credits_amount: int = 0
+    max_uses: int = 1
+    used_count: int = 0
+    is_active: bool = True
+    expires_at: Optional[float] = None
+    created_by: Optional[int] = None
+    description: Optional[str] = None
+    created_at: float = Field(default_factory=time.time)
+
+    class Settings:
+        name = "invite_codes"
+        indexes = [
+            IndexModel([("code", ASCENDING)], unique=True),
+            IndexModel([("channel", ASCENDING)]),
+            IndexModel([("is_active", ASCENDING)]),
+            IndexModel([("created_by", ASCENDING)]),
+        ]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "code": self.code,
+            "channel": self.channel,
+            "credits_amount": self.credits_amount,
+            "max_uses": self.max_uses,
+            "used_count": self.used_count,
+            "is_active": self.is_active,
+            "expires_at": self.expires_at,
+            "created_by": self.created_by,
+            "description": self.description,
+            "created_at": self.created_at,
+        }
+
+
+# ---------------------------------------------------------------------------
+# InviteCodeUsageDocument
+# ---------------------------------------------------------------------------
+
+class InviteCodeUsageDocument(Document):
+    """Invite code usage record."""
+
+    id: Optional[int] = None
+    invite_code_id: int
+    user_id: int
+    channel: str
+    credits_granted: int = 0
+    created_at: float = Field(default_factory=time.time)
+
+    class Settings:
+        name = "invite_code_usages"
+        indexes = [
+            IndexModel([("invite_code_id", ASCENDING)]),
+            IndexModel([("user_id", ASCENDING)], unique=True),
+            IndexModel([("channel", ASCENDING)]),
+        ]
+
+
+# ---------------------------------------------------------------------------
+# SponsorProfileDocument
+# ---------------------------------------------------------------------------
+
+class SponsorProfileDocument(Document):
+    """Sponsor profile for sponsor page."""
+
+    id: Optional[int] = None
+    nickname: str
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+    link_url: Optional[str] = None
+    amount: Optional[str] = None
+    note: Optional[str] = None
+    sort_order: int = 0
+    is_active: bool = True
+    created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)
+
+    class Settings:
+        name = "sponsor_profiles"
+        indexes = [
+            IndexModel([("is_active", ASCENDING)]),
+            IndexModel([("sort_order", ASCENDING)]),
+        ]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "nickname": self.nickname,
+            "avatar_url": self.avatar_url,
+            "bio": self.bio,
+            "link_url": self.link_url,
+            "amount": self.amount,
+            "note": self.note,
+            "sort_order": self.sort_order,
+            "is_active": self.is_active,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }

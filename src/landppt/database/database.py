@@ -25,6 +25,16 @@ from .mongo_models import (
     GlobalMasterTemplateDocument,
     CounterDocument,
     UserConfigDocument,
+    UserDocument,
+    UserSessionDocument,
+    UserAPIKeyDocument,
+    CreditTransactionDocument,
+    RedemptionCodeDocument,
+    NarrationAudioDocument,
+    DailyCheckInDocument,
+    InviteCodeDocument,
+    InviteCodeUsageDocument,
+    SponsorProfileDocument,
 )
 
 logger = logging.getLogger(__name__)
@@ -116,6 +126,12 @@ async def init_db() -> None:
             GlobalMasterTemplateDocument,
             CounterDocument,
             UserConfigDocument,
+            UserDocument,
+            UserSessionDocument,
+            UserAPIKeyDocument,
+            CreditTransactionDocument,
+            RedemptionCodeDocument,
+            NarrationAudioDocument,
         ],
     )
     logger.info("MongoDB initialised: db=%s url=%s", db_name, mongodb_url.split("@")[-1])

@@ -35,8 +35,8 @@ dependencies = [
     "pypdf2>=3.0.1",
     "requests>=2.31.0",
     # Database libraries — MongoDB
-    "motor>=3.3.0",   # async MongoDB driver
-    "beanie>=1.26.0", # MongoDB ODM (Pydantic v2 compatible)
+    "motor==3.3.2",   # async MongoDB driver
+    "beanie==1.26.0", # MongoDB ODM (Pydantic v2 compatible)
     # Cache library
     "valkey>=6.0.0", # Valkey (Redis-compatible) cache
     # AI and LLM libraries
@@ -67,6 +67,7 @@ dependencies = [
     "langchain-community>=0.3.27",
     "edge-tts>=6.1.0",
     "resend>=2.21.0",
+    "pymongo==4.6.1",
 ]
 
 

@@ -14,6 +14,16 @@ from .mongo_models import (
     TodoStageEmbed as TodoStage,
     CounterDocument,
     UserConfigDocument as UserConfig,
+    UserDocument as User,
+    UserSessionDocument as UserSession,
+    UserAPIKeyDocument as UserAPIKey,
+    CreditTransactionDocument as CreditTransaction,
+    RedemptionCodeDocument as RedemptionCode,
+    NarrationAudioDocument as NarrationAudio,
+    DailyCheckInDocument as DailyCheckIn,
+    InviteCodeDocument as InviteCode,
+    InviteCodeUsageDocument as InviteCodeUsage,
+    SponsorProfileDocument as SponsorProfile,
 )
 
 # SQLAlchemy declarative_base stub — kept so any surviving code that does
@@ -32,5 +42,15 @@ __all__ = [
     "TodoBoard",
     "TodoStage",
     "UserConfig",
+    "User",
+    "UserSession",
+    "UserAPIKey",
+    "CreditTransaction",
+    "RedemptionCode",
+    "NarrationAudio",
+    "DailyCheckIn",
+    "InviteCode",
+    "InviteCodeUsage",
+    "SponsorProfile",
     "Base",
 ]
