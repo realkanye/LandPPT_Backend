@@ -43,7 +43,7 @@ def _effective_user_id(user_id: Optional[int]) -> Optional[int]:
 
 async def _next_counter(name: str) -> int:
     """Atomically increment a named counter and return the new value."""
-    col = CounterDocument.get_motor_collection()
+    col = CounterDocument.get_pymongo_collection()
     doc = await col.find_one_and_update(
         {"name": name},
         {"$inc": {"value": 1}},
@@ -245,7 +245,7 @@ class TodoStageRepository:
             f"todo_board.stages.$[s].{k}": v
             for k, v in update_data.items()
         }
-        col = ProjectDocument.get_motor_collection()
+        col = ProjectDocument.get_pymongo_collection()
         result = await col.update_one(
             {"project_id": project_id},
             {"$set": set_fields},
@@ -269,7 +269,7 @@ class TodoStageRepository:
     async def update_stage(self, stage_id: str, update_data: Dict[str, Any]) -> bool:
         """Fallback: update by stage_id alone (requires a project scan)."""
         update_data["updated_at"] = time.time()
-        col = ProjectDocument.get_motor_collection()
+        col = ProjectDocument.get_pymongo_collection()
         set_fields = {f"todo_board.stages.$[s].{k}": v for k, v in update_data.items()}
         result = await col.update_one(
             {"todo_board.stages.stage_id": stage_id},
@@ -387,7 +387,7 @@ class SlideDataRepository:
     async def delete_slides_after_index(
         self, project_id: str, start_index: int
     ) -> int:
-        col = SlideDocument.get_motor_collection()
+        col = SlideDocument.get_pymongo_collection()
         result = await col.delete_many(
             {"project_id": project_id, "slide_index": {"$gte": start_index}}
         )
@@ -440,7 +440,7 @@ class PPTTemplateRepository:
         template_data.setdefault("updated_at", time.time())
 
         # Atomically increment the project-level template counter to get an int id
-        col = ProjectDocument.get_motor_collection()
+        col = ProjectDocument.get_pymongo_collection()
         updated = await col.find_one_and_update(
             {"project_id": project_id},
             {"$inc": {"ppt_template_counter": 1}},
@@ -487,7 +487,7 @@ class PPTTemplateRepository:
         self, template_id: int, update_data: Dict[str, Any]
     ) -> bool:
         update_data["updated_at"] = time.time()
-        col = ProjectDocument.get_motor_collection()
+        col = ProjectDocument.get_pymongo_collection()
         set_fields = {f"ppt_templates.$[t].{k}": v for k, v in update_data.items()}
         result = await col.update_one(
             {"ppt_templates.id": template_id},
@@ -497,7 +497,7 @@ class PPTTemplateRepository:
         return result.modified_count > 0
 
     async def increment_usage_count(self, template_id: int) -> bool:
-        col = ProjectDocument.get_motor_collection()
+        col = ProjectDocument.get_pymongo_collection()
         result = await col.update_one(
             {"ppt_templates.id": template_id},
             {
@@ -509,7 +509,7 @@ class PPTTemplateRepository:
         return result.modified_count > 0
 
     async def delete_template(self, template_id: int) -> bool:
-        col = ProjectDocument.get_motor_collection()
+        col = ProjectDocument.get_pymongo_collection()
         result = await col.update_one(
             {"ppt_templates.id": template_id},
             {"$pull": {"ppt_templates": {"id": template_id}}},
@@ -718,7 +718,7 @@ class GlobalMasterTemplateRepository:
             else:
                 query["user_id"] = effective
 
-        col = GlobalMasterTemplateDocument.get_motor_collection()
+        col = GlobalMasterTemplateDocument.get_pymongo_collection()
         result = await col.update_one(query, {"$set": update_data})
         return result.modified_count > 0
 
@@ -739,7 +739,7 @@ class GlobalMasterTemplateRepository:
             else:
                 query["user_id"] = effective
 
-        col = GlobalMasterTemplateDocument.get_motor_collection()
+        col = GlobalMasterTemplateDocument.get_pymongo_collection()
         result = await col.delete_one(query)
         rows = result.deleted_count
         logger.info("Delete template %d: %d rows affected", template_id, rows)
@@ -757,7 +757,7 @@ class GlobalMasterTemplateRepository:
                 query,
                 {"$or": [{"user_id": effective}, {"user_id": None}]},
             )
-        col = GlobalMasterTemplateDocument.get_motor_collection()
+        col = GlobalMasterTemplateDocument.get_pymongo_collection()
         result = await col.update_one(
             query,
             {
@@ -774,7 +774,7 @@ class GlobalMasterTemplateRepository:
         allow_system_write: bool = False,
     ) -> bool:
         effective = _effective_user_id(user_id)
-        col = GlobalMasterTemplateDocument.get_motor_collection()
+        col = GlobalMasterTemplateDocument.get_pymongo_collection()
         now = time.time()
 
         if effective is None:

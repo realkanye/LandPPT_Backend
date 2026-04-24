@@ -100,70 +100,98 @@ async def run_tests():
         else:
             fail("GET /openapi.json", f"status={r.status_code}")
 
-        # ── GET /v1/projects (list projects — should be empty) ───────────────
-        r = await client.get("/v1/projects")
+        # ── GET /projects (legacy — list projects, should be empty) ─────────
+        r = await client.get("/projects")
         if r.status_code == 200:
             body = r.json()
-            project_count = len(body) if isinstance(body, list) else body.get("total", "?")
-            ok("GET /v1/projects", f"total={project_count}")
+            count = body.get("total", len(body) if isinstance(body, list) else "?")
+            ok("GET /projects", f"total={count}")
         else:
-            fail("GET /v1/projects", f"status={r.status_code} body={r.text[:120]}")
+            fail("GET /projects", f"status={r.status_code} body={r.text[:120]}")
 
-        # ── POST /v1/projects (create project) ───────────────────────────────
+        # ── GET /v1/scenarios ────────────────────────────────────────────────
+        r = await client.get("/v1/scenarios")
+        if r.status_code == 200:
+            body = r.json()
+            count = len(body) if isinstance(body, list) else "?"
+            ok("GET /v1/scenarios", f"scenarios={count}")
+        else:
+            fail("GET /v1/scenarios", f"status={r.status_code} body={r.text[:120]}")
+
+        # ── GET /scenarios (root) ────────────────────────────────────────────
+        r = await client.get("/scenarios")
+        if r.status_code == 200:
+            ok("GET /scenarios", f"ok")
+        else:
+            fail("GET /scenarios", f"status={r.status_code} body={r.text[:120]}")
+
+        # ── POST /v1/presentations (create async job) ────────────────────────
         payload = {
             "title": "沙箱测试项目",
             "scenario": "business",
             "topic": "MongoDB 迁移测试",
             "requirements": "验证 MongoDB 数据层是否正常工作",
         }
-        r = await client.post("/v1/projects", json=payload)
+        r = await client.post("/v1/presentations", json=payload)
+        job_id = None
         project_id = None
-        if r.status_code in (200, 201):
+        if r.status_code in (200, 201, 202):
             body = r.json()
-            project_id = body.get("project_id") or body.get("id")
-            ok("POST /v1/projects", f"project_id={project_id}")
+            job_id = body.get("job_id")
+            project_id = body.get("project_id")
+            ok("POST /v1/presentations", f"job_id={job_id} project_id={project_id}")
         else:
-            fail("POST /v1/projects", f"status={r.status_code} body={r.text[:200]}")
+            fail("POST /v1/presentations", f"status={r.status_code} body={r.text[:200]}")
 
-        # ── GET /v1/projects/{id} (retrieve project) ─────────────────────────
-        if project_id:
-            r = await client.get(f"/v1/projects/{project_id}")
+        # ── GET /v1/jobs/{job_id} ────────────────────────────────────────────
+        if job_id:
+            r = await client.get(f"/v1/jobs/{job_id}")
             if r.status_code == 200:
                 body = r.json()
-                ok("GET /v1/projects/{id}", f"title={body.get('title','?')}")
+                ok("GET /v1/jobs/{job_id}", f"status={body.get('status','?')}")
             else:
-                fail("GET /v1/projects/{id}", f"status={r.status_code} body={r.text[:120]}")
+                fail("GET /v1/jobs/{job_id}", f"status={r.status_code} body={r.text[:120]}")
 
-        # ── GET /v1/templates (global master templates) ──────────────────────
-        r = await client.get("/v1/templates")
-        if r.status_code in (200, 404):
-            ok("GET /v1/templates", f"status={r.status_code}")
-        else:
-            fail("GET /v1/templates", f"status={r.status_code} body={r.text[:120]}")
-
-        # ── GET /v1/config (user config) ─────────────────────────────────────
-        r = await client.get("/v1/config")
-        if r.status_code in (200, 404):
-            ok("GET /v1/config", f"status={r.status_code}")
-        else:
-            fail("GET /v1/config", f"status={r.status_code} body={r.text[:120]}")
-
-        # ── DELETE /v1/projects/{id} ─────────────────────────────────────────
+        # ── GET /projects/{id} ───────────────────────────────────────────────
         if project_id:
-            r = await client.delete(f"/v1/projects/{project_id}")
-            if r.status_code in (200, 204):
-                ok("DELETE /v1/projects/{id}", "project deleted")
+            r = await client.get(f"/projects/{project_id}")
+            if r.status_code == 200:
+                body = r.json()
+                ok("GET /projects/{id}", f"title={body.get('title','?')}")
             else:
-                fail("DELETE /v1/projects/{id}", f"status={r.status_code} body={r.text[:120]}")
+                fail("GET /projects/{id}", f"status={r.status_code} body={r.text[:120]}")
 
-        # ── GET /v1/projects after delete (should be empty again) ────────────
-        r = await client.get("/v1/projects")
+        # ── GET /v1/presentations/{project_id} ──────────────────────────────
+        if project_id:
+            r = await client.get(f"/v1/presentations/{project_id}")
+            if r.status_code in (200, 404):
+                ok("GET /v1/presentations/{id}", f"status={r.status_code}")
+            else:
+                fail("GET /v1/presentations/{id}", f"status={r.status_code} body={r.text[:120]}")
+
+        # ── GET /ai/providers ────────────────────────────────────────────────
+        r = await client.get("/ai/providers")
+        if r.status_code == 200:
+            ok("GET /ai/providers", r.text[:60].strip())
+        else:
+            fail("GET /ai/providers", f"status={r.status_code}")
+
+        # ── DELETE /projects/{id} ────────────────────────────────────────────
+        if project_id:
+            r = await client.delete(f"/projects/{project_id}")
+            if r.status_code in (200, 204):
+                ok("DELETE /projects/{id}", "project deleted")
+            else:
+                fail("DELETE /projects/{id}", f"status={r.status_code} body={r.text[:120]}")
+
+        # ── GET /projects after delete (should be empty again) ───────────────
+        r = await client.get("/projects")
         if r.status_code == 200:
             body = r.json()
-            count = len(body) if isinstance(body, list) else body.get("total", "?")
-            ok("GET /v1/projects (after delete)", f"total={count}")
+            count = body.get("total", len(body) if isinstance(body, list) else "?")
+            ok("GET /projects (after delete)", f"total={count}")
         else:
-            fail("GET /v1/projects (after delete)", f"status={r.status_code}")
+            fail("GET /projects (after delete)", f"status={r.status_code}")
 
 
 async def main():
