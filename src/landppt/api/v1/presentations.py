@@ -40,15 +40,6 @@ logger = logging.getLogger(__name__)
 
 _ANONYMOUS_USER_ID: int = app_config.anonymous_user_id
 
-_WORKFLOW_STAGES = [
-    "requirements_confirm",
-    "outline_generation",
-    "creative_design",
-    "template_selection",
-    "slide_generation",
-    "layout_repair",
-]
-
 
 # ---------------------------------------------------------------------------
 # Background task functions (also imported by main_api.py for legacy routes)
@@ -61,11 +52,24 @@ async def _run_ppt_generation(project_id: str, confirmed_requirements: dict) -> 
     await ppt_service.confirm_requirements_and_update_workflow(
         project_id, confirmed_requirements
     )
-    for stage_id in _WORKFLOW_STAGES:
-        logger.info("project=%s stage=%s starting", project_id, stage_id)
-        await ppt_service.start_workflow_from_stage(project_id, stage_id)
-        logger.info("project=%s stage=%s done", project_id, stage_id)
 
+    # Reconstruct the request object that _execute_project_workflow needs.
+    # The workflow reads confirmed_requirements from the DB (saved above), so
+    # only the identity fields (user_id, topic, scenario) matter here.
+    ppt_request = PPTGenerationRequest(
+        scenario=confirmed_requirements.get("scenario", "general"),
+        topic=confirmed_requirements.get("topic", ""),
+        requirements=confirmed_requirements.get("requirements", ""),
+        language=confirmed_requirements.get("language", "zh"),
+        target_audience=confirmed_requirements.get("target_audience", ""),
+        ppt_style=confirmed_requirements.get("style", "general"),
+        custom_style_prompt=confirmed_requirements.get("custom_style_prompt", ""),
+        user_id=_ANONYMOUS_USER_ID,
+    )
+
+    await ppt_service._execute_project_workflow(
+        project_id, ppt_request, user_id=_ANONYMOUS_USER_ID
+    )
     return {"project_id": project_id, "success": True}
 
 
