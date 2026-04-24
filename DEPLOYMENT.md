@@ -38,9 +38,6 @@ cp .env.example .env
 # MongoDB 连接
 MONGODB_URL=mongodb://localhost:27017/landppt
 
-# 应用密钥（生产环境请换成随机长字符串）
-SECRET_KEY=your-random-secret-key-here
-
 # 选择默认 AI 提供商（见下方各提供商配置）
 DEFAULT_AI_PROVIDER=openai
 ```

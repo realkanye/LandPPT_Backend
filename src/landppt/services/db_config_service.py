@@ -29,7 +29,7 @@ class DatabaseConfigService:
     # System-only keys that should not be stored in database
     # These are read from environment variables only
     SYSTEM_ONLY_KEYS = {
-        "database_url", "secret_key", "host", "port", "base_url"
+        "database_url", "host", "port", "base_url"
     }
     
     # Categories that should only be visible/editable by admins

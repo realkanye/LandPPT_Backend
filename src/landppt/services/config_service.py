@@ -131,8 +131,7 @@ class ConfigService:
             "port": {"type": "number", "category": "app_config", "default": "8000"},
             "base_url": {"type": "url", "category": "app_config", "default": "http://localhost:8000"},
             "reload": {"type": "boolean", "category": "app_config", "default": "true"},
-            "secret_key": {"type": "password", "category": "app_config", "default": "your-very-secure-secret-key"},
-            "access_token_expire_minutes": {"type": "number", "category": "app_config", "default": "20160"},  # 2 weeks
+            "access_token_expire_minutes": {"type": "number", "category": "app_config", "default": "20160"},
             "max_file_size": {"type": "number", "category": "app_config", "default": "10485760"},
             "upload_dir": {"type": "text", "category": "app_config", "default": "uploads"},
             "cache_ttl": {"type": "number", "category": "app_config", "default": "3600"},
