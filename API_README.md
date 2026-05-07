@@ -224,7 +224,7 @@ PPT 生成完成后，提交一个导出任务将其转换为 PDF 或 PPTX。
 
 **依赖说明：**
 - **PDF**：需要 Playwright（Chromium）
-- **PPTX**：需要 Apryse SDK，并配置 `ENABLE_APRYSE_PPTX_EXPORT=true` + `APRYSE_LICENSE_KEY`
+- **PPTX**：**无外部 SDK 依赖**。项目内置的 SVG → DrawingML 转换器（基于 ppt-master 移植）直接从 `slides_svg` 生成原生可编辑形状，下载后用 PowerPoint / Keynote / WPS 打开即可逐个元素编辑文本和形状，与从头创建的 PPT 同等。
 
 **请求示例：**
 
@@ -310,11 +310,16 @@ POST /v1/presentations
     ├─ 阶段 2：PPT 生成（LLM 调用，最耗时）
     │   ├─ 从 MongoDB 读取大纲
     │   ├─ 为每一页幻灯片：
-    │   │   ├─ 选择合适的布局模板
-    │   │   ├─ 调用 AI 生成 HTML 幻灯片内容
-    │   │   └─ 执行布局修复（防止内容溢出等问题）
-    │   ├─ 将 slides_html / slides_data 写入 MongoDB
+    │   │   ├─ 调用 AI 按结构化 SVG 协议生成（文字是 <text>，形状是真实图元）
+    │   │   ├─ 自动清理代码块包装、补齐 viewBox/xmlns
+    │   │   └─ 失败页降级为带错误提示的兜底 SVG，不阻塞整体流程
+    │   ├─ 将 slides_svg（List[str]）写入 MongoDB
     │   └─ 标记 ppt_creation 阶段 → completed
+    │
+    │   PPTX 导出阶段（按需，POST /exports?format=pptx 触发）：
+    │   ├─ 从 MongoDB 读取 slides_svg
+    │   ├─ 经 svg_to_pptx 转换为原生 DrawingML 形状
+    │   └─ 输出可编辑 .pptx，所有文字/形状均可在 PPT 中直接修改
     │
     └─ 标记 project.status → completed
            ↑ 此时轮询接口返回 status=completed，可下载
@@ -459,7 +464,7 @@ echo ">>> 已保存为 output.pdf"
 下载的 HTML 文件可以：
 1. 直接用浏览器打开，按 `F11` 全屏演示
 2. 通过 `POST /v1/presentations/{id}/exports?format=pdf` 导出为 PDF 后用任意 PDF 阅读器播放
-3. 通过 `POST /v1/presentations/{id}/exports?format=pptx` 导出为 PPTX（需配置 Apryse SDK）在 PowerPoint / WPS 中编辑
+3. 通过 `POST /v1/presentations/{id}/exports?format=pptx` 导出为**可编辑 PPTX**，在 PowerPoint / Keynote / WPS 中逐元素修改文字和形状（无需任何商业 SDK）
 
 **Q：如何查看所有历史项目？**
 

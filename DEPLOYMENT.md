@@ -35,10 +35,11 @@
 | 组件 | 说明 |
 |---|---|
 | **Valkey / Redis** 7.x+ | 分布式缓存；不配置则自动降级为进程内内存缓存，功能正常，重启后缓存丢失 |
-| **Playwright（Chromium）** | 仅导出 PDF / PPTX 时需要 |
-| **Apryse SDK** | 仅导出 PPTX 时需要，需申请商业 License Key |
+| **Playwright（Chromium）** | 仅导出 PDF 时需要（PPTX 导出**不**依赖 Playwright） |
 
 > **无 PostgreSQL / SQLite 依赖。** 项目已完全切换为 MongoDB，无需安装其他数据库。
+>
+> **无商业 SDK 依赖。** 可编辑 PPTX 由项目内置的 SVG → DrawingML 转换器（基于 [ppt-master](https://github.com/hugohe3/ppt-master) MIT 协议代码移植）直接生成，**不再需要 Apryse License Key**。
 
 ---
 
@@ -73,7 +74,7 @@ source .venv/bin/activate          # Linux / macOS
 pip install -e .
 ```
 
-依赖安装完成后，如需使用 PDF / PPTX 导出功能，还需安装 Playwright 浏览器：
+依赖安装完成后，如需使用 PDF 导出功能，还需安装 Playwright 浏览器（PPTX 导出无需任何额外步骤）：
 
 ```bash
 # 安装 Chromium（仅首次，约 200MB）
@@ -276,23 +277,17 @@ SLIDE_GENERATION_MODEL_NAME=claude-3-5-haiku-20241022
 
 ### 4.9 可选：PDF / PPTX 导出
 
-系统默认以 HTML 格式输出，无需额外配置即可下载。导出为 PDF 或 PPTX 需要以下配置：
+系统默认以 HTML 格式输出，无需额外配置即可下载。
 
-#### PDF 导出
+#### PPTX 导出（**无任何额外配置**）
 
-需要已安装 Playwright Chromium（见第 3 节），无需额外环境变量。
+PPTX 由项目内置的 SVG → DrawingML 转换器直接生成（基于 [ppt-master](https://github.com/hugohe3/ppt-master) MIT 协议代码移植到 `src/landppt/services/svg_to_pptx/`）。每张幻灯片的文本、形状、颜色都是原生 DrawingML 元素，下载后用 PowerPoint / Keynote / WPS 打开可逐元素编辑，**无需 Apryse License Key、无需任何商业 SDK**。
 
-#### PPTX 导出
+唯一前置条件是 `pip install -e .` 时已经把 `python-pptx` / `svglib` / `reportlab` 装好（已写入 `pyproject.toml` 的 `dependencies`）。
 
-PPTX 转换链路：HTML → PDF（Playwright）→ PPTX（Apryse SDK）。
+#### PDF 导出（需要 Playwright）
 
-```env
-ENABLE_APRYSE_PPTX_EXPORT=true
-APRYSE_LICENSE_KEY=your-apryse-license-key
-# License Key 申请：https://docs.apryse.com/
-```
-
-> Apryse SDK 会在首次调用导出接口时自动下载，无需手动安装。
+PDF 由 Playwright 渲染 HTML 预览页输出。安装步骤见第 3 节末尾的 `playwright install chromium` 命令。无需任何环境变量。
 
 ---
 
@@ -389,7 +384,6 @@ APT_SECURITY_URL=http://mirrors.aliyun.com/debian-security
 | `landppt_data` | `/app/data` | 应用数据 |
 | `landppt_uploads` | `/app/uploads` | 上传文件 |
 | `landppt_cache` | `/app/temp` | 临时缓存 |
-| `landppt_lib` | `/app/lib` | Apryse SDK（避免重复下载） |
 
 `.env` 文件通过 `-v ./.env:/app/.env` 挂载进容器。
 
