@@ -329,6 +329,16 @@ POST /v1/presentations
 
 ## 6. 完整 curl 示例
 
+> **快捷方式**：仓库自带 `scripts/smoke_test.sh`，一条命令跑完整个生成 + 导出流程并落地两个文件（`smoke_preview.html` + `smoke_output.pptx`）。直接执行：
+>
+> ```bash
+> bash scripts/smoke_test.sh
+> ```
+>
+> 也支持环境变量定制，例如 `BASE_URL=http://my-server:8000 TOPIC="量子计算入门" bash scripts/smoke_test.sh`。
+>
+> 下面三段保留为手写示例，方便理解每一步。
+
 ### 场景一：纯文字生成 PPT
 
 ```bash

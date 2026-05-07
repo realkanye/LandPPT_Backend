@@ -1,479 +1,400 @@
-# LandPPT 部署指南
+# LandPPT Backend — 部署指南
 
-本文档介绍如何在服务器上部署 LandPPT，包括环境要求、依赖安装、配置参数和启动方式。
+本文档让你（或 Claude Code）从零开始把项目部署起来，并通过 curl 验证功能可用。
 
-> 接口调用方式请参阅 [API_README.md](./API_README.md)。
+> 接口调用细节请阅读 [API_README.md](./API_README.md)。
 
 ---
 
 ## 目录
 
-1. [环境要求](#1-环境要求)
-2. [获取代码](#2-获取代码)
-3. [安装 Python 依赖](#3-安装-python-依赖)
+1. [资源与环境要求](#1-资源与环境要求)
+2. [一键部署（开发/测试环境）](#2-一键部署开发测试环境)
+3. [详细步骤](#3-详细步骤)
 4. [配置环境变量](#4-配置环境变量)
 5. [启动服务](#5-启动服务)
-6. [使用 Docker 部署](#6-使用-docker-部署)
-7. [验证部署](#7-验证部署)
-8. [可选功能配置](#8-可选功能配置)
-9. [注意事项](#9-注意事项)
+6. [Docker 部署](#6-docker-部署)
+7. [部署后验证（curl 冒烟测试）](#7-部署后验证curl-冒烟测试)
+8. [生产环境建议](#8-生产环境建议)
+9. [故障排查](#9-故障排查)
 
 ---
 
-## 1. 环境要求
+## 1. 资源与环境要求
 
-### 必须
+### 1.1 软件依赖
 
-| 组件 | 版本要求 | 说明 |
-|---|---|---|
-| **Python** | 3.11 或 3.12 | 运行时，低于 3.11 不支持 |
-| **MongoDB** | 6.x 或 7.x | 唯一持久化存储，所有数据存于此 |
-| **AI 提供商** | — | 至少配置一个（见第 4 节） |
+| 组件 | 版本 | 是否必须 | 说明 |
+|---|---|:---:|---|
+| **Python** | 3.11 或 3.12 | ✅ | 低于 3.11 不支持 |
+| **MongoDB** | 6.x / 7.x | ✅ | 唯一持久化存储 |
+| **AI 提供商** | — | ✅ | 至少 1 个：OpenAI / Claude / Gemini / Azure / Ollama |
+| **uv** | ≥ 0.4 | 推荐 | 包管理器，比 pip 快很多 |
+| **git** | 任意 | ✅ | 拉取代码 |
+| **Valkey / Redis** | 7.x+ | ❌ | 多 worker 分布式缓存，单 worker 可不配 |
+| **Playwright Chromium** | 最新 | ❌ | 仅导出 PDF 用；导出 PPTX **不需要** |
 
-### 可选
+> ✅ **无 PostgreSQL / SQLite 依赖。**
+> ✅ **无 Apryse / Aspose 等商业 SDK 依赖**——可编辑 PPTX 由项目内置的 SVG → DrawingML 转换器（[ppt-master](https://github.com/hugohe3/ppt-master) MIT 协议代码）直接生成。
 
-| 组件 | 说明 |
-|---|---|
-| **Valkey / Redis** 7.x+ | 分布式缓存；不配置则自动降级为进程内内存缓存，功能正常，重启后缓存丢失 |
-| **Playwright（Chromium）** | 仅导出 PDF 时需要（PPTX 导出**不**依赖 Playwright） |
+### 1.2 硬件资源（最低配置）
 
-> **无 PostgreSQL / SQLite 依赖。** 项目已完全切换为 MongoDB，无需安装其他数据库。
->
-> **无商业 SDK 依赖。** 可编辑 PPTX 由项目内置的 SVG → DrawingML 转换器（基于 [ppt-master](https://github.com/hugohe3/ppt-master) MIT 协议代码移植）直接生成，**不再需要 Apryse License Key**。
+| 场景 | CPU | 内存 | 磁盘 | 备注 |
+|---|---|---|---|---|
+| 开发机 | 2 核 | 2 GB | 2 GB | 单 worker，本地 MongoDB |
+| 小规模生产 | 2 核 | 4 GB | 5 GB | 2 workers + 远程 MongoDB Atlas |
+| PDF 导出（Playwright） | +1 核 | +1 GB | +500 MB | Chromium 浏览器开销 |
+| Docker 单机一体化 | 2 核 | 4 GB | 10 GB | LandPPT + MongoDB + Valkey 同机 |
+
+### 1.3 网络要求
+
+- 出站：能连到所选 AI 提供商的 API（或自建代理网关）
+- 入站：开放 `PORT`（默认 `8000`）给 API 调用方
+- 联网搜索（可选）：能连到 Tavily API 或自建 SearXNG
 
 ---
 
-## 2. 获取代码
+## 2. 一键部署（开发/测试环境）
+
+适合本机开发或试跑。假设已有可用的 AI API Key。
+
+```bash
+# ---- 1) 拉代码 ----
+git clone <your-repo-url> LandPPT_Backend && cd LandPPT_Backend
+
+# ---- 2) 装依赖（推荐 uv，比 pip 快 10x）----
+pip install uv
+uv sync --no-dev
+
+# ---- 3) 启动本地 MongoDB（任选一种）----
+# 方式 A：Docker（推荐，最快）
+docker run -d --name landppt-mongo -p 27017:27017 mongo:7
+# 方式 B：系统包：sudo apt install mongodb 或 brew install mongodb-community
+# 方式 C：用 MongoDB Atlas 云数据库（直接跳过此步，把 URL 填到 .env 即可）
+
+# ---- 4) 配置环境变量 ----
+cp .env.example .env
+# 编辑 .env，至少填两项：
+#   MONGODB_URL=mongodb://localhost:27017/landppt
+#   OPENAI_API_KEY=sk-xxx     （或其他提供商的 Key + 把 DEFAULT_AI_PROVIDER 改一下）
+
+# ---- 5) 启动服务 ----
+source .venv/bin/activate     # uv sync 创建的虚拟环境
+python run.py
+# 看到 "Uvicorn running on http://0.0.0.0:8000" 就是成功了
+
+# ---- 6) 验证（新开终端）----
+bash scripts/smoke_test.sh
+```
+
+如果第 6 步全部通过，说明部署完成，可以开始按 [API_README.md](./API_README.md) 调用接口。
+
+---
+
+## 3. 详细步骤
+
+### 3.1 拉取代码
 
 ```bash
 git clone <your-repo-url> LandPPT_Backend
 cd LandPPT_Backend
 ```
 
----
-
-## 3. 安装 Python 依赖
-
-推荐使用 `uv`（速度更快）：
+### 3.2 安装 Python 依赖
 
 ```bash
-# 安装 uv（若未安装）
+# 方式一（推荐）：uv
 pip install uv
-
-# 创建虚拟环境并安装所有依赖（使用 pyproject.toml 锁定版本）
 uv sync --no-dev --frozen
-```
 
-如果使用标准 `pip`：
-
-```bash
+# 方式二：传统 pip
 python -m venv .venv
-source .venv/bin/activate          # Linux / macOS
-# .venv\Scripts\activate           # Windows
-
+source .venv/bin/activate         # Linux / macOS
+# .venv\Scripts\activate          # Windows
 pip install -e .
 ```
 
-依赖安装完成后，如需使用 PDF 导出功能，还需安装 Playwright 浏览器（PPTX 导出无需任何额外步骤）：
+### 3.3 安装 MongoDB
+
+如果你已经有 MongoDB 实例（本机/云/团队共享），跳过这一节。
+
+#### 选项 A：Docker（推荐）
 
 ```bash
-# 安装 Chromium（仅首次，约 200MB）
-.venv/bin/playwright install chromium
-
-# Linux 服务器通常还需要以下系统依赖
-.venv/bin/playwright install-deps chromium
+docker run -d --name landppt-mongo \
+  -p 27017:27017 \
+  -v landppt_mongo_data:/data/db \
+  mongo:7
 ```
+
+#### 选项 B：系统包
+
+```bash
+# Ubuntu / Debian
+sudo apt install -y mongodb
+
+# macOS
+brew tap mongodb/brew
+brew install mongodb-community@7.0
+brew services start mongodb-community@7.0
+```
+
+#### 选项 C：MongoDB Atlas（无需本地装）
+
+注册 https://www.mongodb.com/atlas，建一个免费集群，拿到连接串：
+`mongodb+srv://user:pass@cluster.mongodb.net/landppt`
+
+### 3.4（可选）安装 Playwright（仅当需要 PDF 导出）
+
+```bash
+source .venv/bin/activate
+playwright install chromium
+playwright install-deps chromium     # Linux 服务器需要这一步装系统库
+```
+
+不需要 PDF 导出可以跳过——HTML 预览和可编辑 PPTX 不依赖 Playwright。
 
 ---
 
 ## 4. 配置环境变量
 
-复制示例文件并编辑：
-
 ```bash
 cp .env.example .env
 ```
 
-以下各小节分别说明必填项和可选项。
+`.env.example` 里所有字段都有详细注释。**最少需要填两类**：
 
----
-
-### 4.1 必填：数据库
+### 4.1 必填
 
 ```env
-# MongoDB 连接地址
-MONGODB_URL=mongodb://localhost:27017/landppt
-```
-
-**常见格式：**
-
-```env
-# 本地无认证（开发环境）
+# 1) MongoDB 连接串
 MONGODB_URL=mongodb://localhost:27017/landppt
 
-# 带用户名密码
-MONGODB_URL=mongodb://username:password@host:27017/landppt?authSource=admin
-
-# 副本集
-MONGODB_URL=mongodb://user:pass@host1:27017,host2:27017/landppt?replicaSet=rs0
-
-# MongoDB Atlas（云服务）
-MONGODB_URL=mongodb+srv://user:pass@cluster.mongodb.net/landppt
-```
-
----
-
-### 4.2 必填：AI 提供商
-
-必须至少配置一个 AI 提供商，并通过 `DEFAULT_AI_PROVIDER` 指定默认使用哪个。
-
-```env
-# 选择默认 AI 提供商
-# 可选值：openai | anthropic | google | azure_openai | ollama
+# 2) 选一个 AI 提供商，填它的 Key（其他的留空）
 DEFAULT_AI_PROVIDER=openai
-```
-
-#### OpenAI（及兼容 OpenAI 接口的服务）
-
-```env
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
+OPENAI_API_KEY=sk-your-key
 OPENAI_MODEL=gpt-4o
-# 若使用国内中转或私有代理，修改此地址即可：
 OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-#### Anthropic Claude
+### 4.2 常见可选项
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
-ANTHROPIC_MODEL=claude-3-5-haiku-20241022
-# 使用代理时修改此项：
-ANTHROPIC_BASE_URL=https://api.anthropic.com
-```
+# 服务器
+HOST=0.0.0.0
+PORT=8000
+WORKERS=2
 
-#### Google Gemini
-
-```env
-GOOGLE_API_KEY=AIzaxxxxxxxxxxxxxxxxxxxxxxxx
-GOOGLE_MODEL=gemini-2.5-flash
-# 使用代理时修改此项：
-GOOGLE_BASE_URL=https://generativelanguage.googleapis.com
-```
-
-#### Azure OpenAI
-
-```env
-DEFAULT_AI_PROVIDER=azure_openai
-
-AZURE_OPENAI_API_KEY=your-azure-key
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-AZURE_OPENAI_DEPLOYMENT_NAME=your-deployment-name
-AZURE_OPENAI_API_VERSION=2024-02-15-preview
-```
-
-#### Ollama（本地模型）
-
-```env
-DEFAULT_AI_PROVIDER=ollama
-
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3
-```
-
-> 使用 Ollama 前需先在本机安装并拉取模型：`ollama pull llama3`
-
----
-
-### 4.3 可选：服务器参数
-
-```env
-HOST=0.0.0.0          # 监听地址，0.0.0.0 表示所有网卡
-PORT=8000             # 监听端口
-WORKERS=2             # 进程数，生产建议 2~4；开发时设为 1
-RELOAD=false          # 热重载，开发时可改为 true，生产必须 false
-LOG_LEVEL=info        # 日志级别：debug | info | warning | error
-```
-
----
-
-### 4.4 可选：缓存（Valkey / Redis）
-
-不配置时自动使用进程内内存缓存，功能正常，多进程间缓存不共享。
-
-```env
-CACHE_BACKEND=valkey              # memory（默认）| valkey
-VALKEY_URL=valkey://127.0.0.1:6379
-```
-
----
-
-### 4.5 可选：联网搜索增强
-
-开启后，大纲生成阶段可通过搜索引擎补充最新资料（请求时传 `network_mode=true`）。
-
-#### Tavily（推荐）
-
-```env
+# 联网搜索（请求时 network_mode=true 才生效）
+TAVILY_API_KEY=tvly-your-key
 RESEARCH_PROVIDER=tavily
-TAVILY_API_KEY=tvly-xxxxxxxxxxxxxxxxxxxxxxxx
-# 申请地址：https://tavily.com/
+
+# 多 worker 时启用 Valkey 共享缓存
+CACHE_BACKEND=valkey
+VALKEY_URL=valkey://localhost:6379
+
+# 关闭公开 Swagger
+LANDPPT_ENABLE_API_DOCS=false
 ```
 
-#### SearXNG（自建搜索实例）
+### 4.3 各 AI 提供商配置
 
-```env
-RESEARCH_PROVIDER=searxng
-SEARXNG_HOST=http://your-searxng-instance:8888
-```
-
----
-
-### 4.6 可选：图片服务
-
-控制幻灯片中是否插入图片，以及图片来源。
-
-```env
-ENABLE_IMAGE_SERVICE=false         # 总开关，false 时不插入任何图片
-
-# 启用后可选择图片来源：
-ENABLE_NETWORK_SEARCH=true         # 网络图片搜索（Pixabay / Unsplash）
-ENABLE_AI_GENERATION=false         # AI 生图（需配置对应 API Key）
-
-# 网络图片 API Key（任选其一或同时配置）
-PIXABAY_API_KEY=your-pixabay-key           # 申请：https://pixabay.com/api/docs/
-UNSPLASH_ACCESS_KEY=your-unsplash-key      # 申请：https://unsplash.com/developers
-
-# AI 图片生成（Pollinations，免费无需 Key）
-ENABLE_AI_GENERATION=true
-DEFAULT_AI_IMAGE_PROVIDER=pollinations
-```
-
----
-
-### 4.7 可选：LLM 请求参数
-
-```env
-MAX_TOKENS=8192         # 单次 LLM 最大生成 Token 数
-TEMPERATURE=0.7         # 生成温度（0.0=确定性，1.0=创意性）
-LLM_TIMEOUT_SECONDS=600 # LLM 请求超时（秒），生成大型 PPT 可能需要较长时间
-```
-
----
-
-### 4.8 可选：分阶段指定不同模型
-
-可为大纲生成、幻灯片生成等不同阶段单独指定模型，留空则沿用默认。
-
-```env
-# 格式：提供商名称（同 DEFAULT_AI_PROVIDER 可选值）
-OUTLINE_MODEL_PROVIDER=openai
-OUTLINE_MODEL_NAME=gpt-4o
-
-SLIDE_GENERATION_MODEL_PROVIDER=anthropic
-SLIDE_GENERATION_MODEL_NAME=claude-3-5-haiku-20241022
-```
-
----
-
-### 4.9 可选：PDF / PPTX 导出
-
-系统默认以 HTML 格式输出，无需额外配置即可下载。
-
-#### PPTX 导出（**无任何额外配置**）
-
-PPTX 由项目内置的 SVG → DrawingML 转换器直接生成（基于 [ppt-master](https://github.com/hugohe3/ppt-master) MIT 协议代码移植到 `src/landppt/services/svg_to_pptx/`）。每张幻灯片的文本、形状、颜色都是原生 DrawingML 元素，下载后用 PowerPoint / Keynote / WPS 打开可逐元素编辑，**无需 Apryse License Key、无需任何商业 SDK**。
-
-唯一前置条件是 `pip install -e .` 时已经把 `python-pptx` / `svglib` / `reportlab` 装好（已写入 `pyproject.toml` 的 `dependencies`）。
-
-#### PDF 导出（需要 Playwright）
-
-PDF 由 Playwright 渲染 HTML 预览页输出。安装步骤见第 3 节末尾的 `playwright install chromium` 命令。无需任何环境变量。
-
----
-
-### 4.10 API 文档开关
-
-```env
-LANDPPT_ENABLE_API_DOCS=true   # true=暴露 /docs Swagger UI，false=关闭
-```
+| 提供商 | 必填字段 | 说明 |
+|---|---|---|
+| OpenAI | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL` | 国内中转改 `OPENAI_BASE_URL` 即可 |
+| Anthropic | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`, `ANTHROPIC_BASE_URL` | — |
+| Google | `GOOGLE_API_KEY`, `GOOGLE_MODEL`, `GOOGLE_BASE_URL` | — |
+| Azure | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT_NAME`, `AZURE_OPENAI_API_VERSION` | `DEFAULT_AI_PROVIDER=azure_openai` |
+| Ollama | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | 先 `ollama pull <model>` |
 
 ---
 
 ## 5. 启动服务
 
-### 方式一：run.py（推荐，自动读取 .env）
+### 5.1 直接启动（开发）
 
 ```bash
-# 激活虚拟环境（uv sync 创建的）
 source .venv/bin/activate
-
 python run.py
 ```
 
-启动成功后输出示例：
-
-```
-Starting LandPPT Server...
-Host: 0.0.0.0
-Port: 8000
-Workers: 2
-Server will be available at: http://localhost:8000
-```
-
-### 方式二：uvicorn 直接启动
+### 5.2 uvicorn（精细控制）
 
 ```bash
 PYTHONPATH=src uvicorn landppt.main_api:app \
-  --host 0.0.0.0 \
-  --port 8000 \
-  --workers 2
+  --host 0.0.0.0 --port 8000 --workers 2
 ```
 
-### 方式三：后台运行（生产环境）
+### 5.3 后台运行（生产，nohup）
 
 ```bash
-# 使用 nohup 后台运行，日志写入文件
+mkdir -p logs
 nohup python run.py > logs/landppt.log 2>&1 &
 echo $! > landppt.pid
-
-# 查看日志
 tail -f logs/landppt.log
 
-# 停止服务
+# 停止
 kill $(cat landppt.pid)
 ```
 
-> 生产环境推荐配合 **systemd** 或 **supervisor** 进行进程管理，确保崩溃自动重启。
+### 5.4 systemd（生产，推荐）
+
+```ini
+# /etc/systemd/system/landppt.service
+[Unit]
+Description=LandPPT Backend
+After=network.target
+
+[Service]
+Type=simple
+User=app
+WorkingDirectory=/opt/LandPPT_Backend
+Environment="PATH=/opt/LandPPT_Backend/.venv/bin"
+ExecStart=/opt/LandPPT_Backend/.venv/bin/python run.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now landppt
+sudo journalctl -u landppt -f
+```
 
 ---
 
-## 6. 使用 Docker 部署
+## 6. Docker 部署
 
-项目提供了 `docker-compose.yml`，配合 `.env` 文件即可一键启动。
+仓库自带 `Dockerfile` + `docker-compose.yml`。
 
-### 准备 .env 文件
+### 6.1 docker compose（一体化）
 
 ```bash
 cp .env.example .env
-# 编辑 .env，至少填写：
-#   MONGODB_URL=...
-#   DEFAULT_AI_PROVIDER=...
-#   OPENAI_API_KEY=...（或其他提供商的 Key）
-```
+# 编辑 .env
 
-### 构建并启动
-
-```bash
 docker compose up -d
-```
-
-**可选 build 参数**（国内网络加速 apt 下载）：
-
-```env
-# 在 .env 中添加（按实际网络情况选择）：
-APT_DEBIAN_URL=http://mirrors.aliyun.com/debian
-APT_SECURITY_URL=http://mirrors.aliyun.com/debian-security
-```
-
-### 容器数据持久化
-
-`docker-compose.yml` 默认挂载以下 Volume：
-
-| Volume | 容器路径 | 说明 |
-|---|---|---|
-| `landppt_data` | `/app/data` | 应用数据 |
-| `landppt_uploads` | `/app/uploads` | 上传文件 |
-| `landppt_cache` | `/app/temp` | 临时缓存 |
-
-`.env` 文件通过 `-v ./.env:/app/.env` 挂载进容器。
-
-### 常用 Docker 命令
-
-```bash
-# 查看运行状态
-docker compose ps
 
 # 查看日志
 docker compose logs -f landppt
 
-# 重启服务
-docker compose restart landppt
-
-# 停止并移除容器（数据 Volume 保留）
+# 停止
 docker compose down
+```
 
-# 停止并移除容器 + 数据（危险！）
-docker compose down -v
+### 6.2 仅构建镜像
+
+```bash
+docker build -t landppt-backend:latest .
+
+docker run -d --name landppt \
+  -p 8000:8000 \
+  --env-file .env \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/uploads:/app/uploads \
+  landppt-backend:latest
+```
+
+### 6.3 国内 apt 镜像加速（可选）
+
+`.env` 中追加：
+
+```env
+APT_DEBIAN_URL=http://mirrors.aliyun.com/debian
+APT_SECURITY_URL=http://mirrors.aliyun.com/debian-security
 ```
 
 ---
 
-## 7. 验证部署
+## 7. 部署后验证（curl 冒烟测试）
 
-服务启动后，通过以下方式验证：
-
-### 健康检查
+最快的方法：跑仓库自带的脚本。
 
 ```bash
-curl http://localhost:8000/v1/health
+bash scripts/smoke_test.sh
 ```
 
-正常返回：
+它会依次：
+1. 调 `GET /v1/health` 检查健康
+2. 调 `GET /v1/scenarios` 列出场景
+3. `POST /v1/presentations` 提交一个真实生成任务
+4. 轮询 `GET /v1/jobs/{job_id}` 直到 `status=completed`
+5. 下载 `GET /v1/presentations/{project_id}/download?format=html`
+6. 提交 `POST /v1/presentations/{project_id}/exports?format=pptx`
+7. 轮询导出任务，下载 `.pptx` 文件
 
-```json
-{
-  "status": "healthy",
-  "version": "v1",
-  "ai_provider": "openai",
-  "task_stats": { ... }
-}
-```
+输出三个文件到当前目录：
+- `smoke_preview.html` —— 浏览器打开看效果
+- `smoke_output.pptx` —— PowerPoint / Keynote / WPS 打开，逐元素可编辑
 
-### 查看 Swagger 文档
-
-浏览器打开：`http://localhost:8000/docs`
-
-### 快速冒烟测试
+如果不想跑脚本，下面是手动逐条验证：
 
 ```bash
-# 提交一个生成任务
-curl -X POST http://localhost:8000/v1/presentations \
+BASE=http://localhost:8000
+
+# 1) 健康检查
+curl -s "$BASE/v1/health"
+#   期望: {"status":"healthy","version":"v1","ai_provider":"openai",...}
+
+# 2) 提交生成任务
+RESP=$(curl -s -X POST "$BASE/v1/presentations" \
   -H "Content-Type: application/json" \
-  -d '{"topic": "测试", "scenario": "general"}'
+  -d '{"topic":"人工智能在医疗领域的应用","scenario":"technology","language":"zh"}')
+JOB=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+PROJ=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project_id'])")
 
-# 预期返回 202 + job_id + project_id
+# 3) 轮询（每 5 秒）
+while true; do
+  S=$(curl -s "$BASE/v1/jobs/$JOB" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+  echo "status: $S"; [ "$S" = "completed" ] && break; [ "$S" = "failed" ] && exit 1; sleep 5
+done
+
+# 4) 下 HTML 预览
+curl -s "$BASE/v1/presentations/$PROJ/download?format=html" -o preview.html
+
+# 5) 提交 PPTX 导出
+EXPJOB=$(curl -s -X POST "$BASE/v1/presentations/$PROJ/exports?format=pptx" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+
+# 6) 轮询导出任务
+while true; do
+  S=$(curl -s "$BASE/v1/jobs/$EXPJOB" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+  echo "export: $S"; [ "$S" = "completed" ] && break; [ "$S" = "failed" ] && exit 1; sleep 3
+done
+
+# 7) 下 PPTX
+curl -s "$BASE/v1/jobs/$EXPJOB/download" -o output.pptx
 ```
 
 ---
 
-## 8. 可选功能配置
+## 8. 生产环境建议
 
-### MongoDB 索引与模板初始化
+| 主题 | 建议 |
+|---|---|
+| 进程管理 | systemd 或 supervisor，崩溃自动重启 |
+| 反向代理 | Nginx / Caddy（必配长超时，PPT 生成可能 1-3 分钟） |
+| Worker 数 | 2~4，受内存和 LLM 配额制约 |
+| 缓存 | `WORKERS > 1` 时**必须**配 Valkey/Redis，否则缓存不一致 |
+| 日志 | 结构化日志写到文件，配合 logrotate |
+| 监控 | 监控 `GET /v1/health`；监控 `GET /v1/jobs/{id}` 失败率 |
+| 备份 | 备份 MongoDB（生成的 PPT 全部存在 `landppt.projects` 集合） |
+| Swagger | 公网部署设 `LANDPPT_ENABLE_API_DOCS=false` 关闭 `/docs` |
+| API 限流 | 在 Nginx 或 API 网关层做 |
 
-应用**首次启动时自动完成**以下初始化，无需手动操作：
-
-- 创建 MongoDB 集合和索引
-- 将 `template_examples/` 目录下的内置 PPT 模板导入数据库
-
-多进程（`WORKERS > 1`）场景下，通过文件锁保证初始化只执行一次。
-
-### 多进程部署说明
-
-- `WORKERS > 1` 时自动关闭 `RELOAD`（两者不兼容）
-- 使用 Valkey 缓存时，多进程间缓存可共享；使用内存缓存时各进程独立
-- 后台任务（PPT 生成）由各 worker 独立执行，不跨进程调度
-
-### Nginx 反向代理示例
+### Nginx 配置示例
 
 ```nginx
 server {
     listen 80;
     server_name your-domain.com;
 
-    # PPT 生成可能耗时较长，适当延长超时
     proxy_read_timeout 600s;
     proxy_send_timeout 600s;
-    client_max_body_size 20M;   # 允许上传较大文件
+    client_max_body_size 50M;          # 上传源文档
 
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -487,38 +408,63 @@ server {
 
 ---
 
-## 9. 注意事项
+## 9. 故障排查
 
-### MongoDB 连接失败
+### 9.1 启动时报错
 
-如果 MongoDB 无法连接，服务**启动会直接报错**，不会静默忽略。请确保：
-- MongoDB 服务已启动（`mongod` 进程存在）
-- `MONGODB_URL` 地址、端口、认证信息正确
-- 服务器防火墙允许 27017 端口
+| 报错 | 原因 | 解决 |
+|---|---|---|
+| `Failed to connect to MongoDB` | MongoDB 没启或地址错 | 检查 `MONGODB_URL`，本机可 `mongosh` 连一下 |
+| `No module named 'landppt'` | 没装到当前 Python | 重新 `uv sync` 或 `pip install -e .` |
+| `AttributeError: get_pymongo_collection` | beanie 版本太旧 | `pip install -U "beanie>=2.0"` |
+| 没有任何日志输出 | `RELOAD=true` + `WORKERS>1` 冲突 | 二选一，不能同时 |
 
-### AI 提供商选择建议
+### 9.2 任务一直 `pending` 不变 `running`
 
-| 场景 | 推荐 |
-|---|---|
-| 国内服务器，预算有限 | OpenAI 兼容中转接口（修改 `OPENAI_BASE_URL`）|
-| 追求生成质量 | Claude 3.5 Sonnet / GPT-4o |
-| 私有化部署，数据不出境 | Ollama + 本地模型 |
-| 已有 Azure 账号 | Azure OpenAI |
+后台任务队列是顺序的，前面有任务在跑就会等。看 `GET /v1/health` 的 `task_stats` 字段。
 
-### LLM 超时调优
+### 9.3 任务 `failed`
 
-PPT 生成包含多次 LLM 调用，默认超时 600 秒。若生成大型 PPT（20+ 页）或模型响应较慢，可适当提高：
-
-```env
-LLM_TIMEOUT_SECONDS=900
+```bash
+curl -s "$BASE/v1/jobs/$JOB" | python3 -m json.tool
 ```
 
-### 存储说明
+`error` 字段会说明失败原因。常见：
+- AI Key 无效 / 余额不足 / 限流
+- LLM 请求超时（调高 `LLM_TIMEOUT_SECONDS`）
+- 网络不通到 AI 提供商
 
-- 项目**仅使用 MongoDB** 一种持久化存储，无 PostgreSQL / SQLite 依赖
-- Valkey 仅用于缓存加速，不存储业务数据，可选
-- 生成的 PPT HTML 直接存储在 MongoDB 项目文档中，通过 API 按需读取
+### 9.4 PPTX 打开后是空白 / 元素错乱
 
-### 旧版 docker-compose.yml 警告
+打开服务端日志看有没有 `LLM did not produce a parseable SVG` 之类的告警。LLM 偶尔会输出格式不合规的 SVG，被服务端兜底为简单错误页。换一个更强的模型（比如 `OPENAI_MODEL=gpt-4o`）通常能解决。
 
-仓库中的 `docker-compose.yml` 包含旧版 PostgreSQL 和 Valkey 的配置段，可以忽略 PostgreSQL 相关部分，以 `.env` 中的 `MONGODB_URL` 为准。后续版本会清理此文件。
+### 9.5 PDF 导出失败
+
+```
+PDF generation service unavailable (Playwright not installed?)
+```
+
+执行：
+
+```bash
+playwright install chromium
+playwright install-deps chromium     # Linux only
+```
+
+### 9.6 打开 `/docs` 是 404
+
+`LANDPPT_ENABLE_API_DOCS=false` 已主动关闭 Swagger。改回 `true` 重启即可。
+
+---
+
+## 附录：相关文件
+
+| 文件 | 说明 |
+|---|---|
+| `run.py` | 服务启动入口 |
+| `pyproject.toml` | Python 依赖列表（uv/pip 都读这个） |
+| `.env.example` | 环境变量模板 |
+| `Dockerfile` / `docker-compose.yml` | 容器部署文件 |
+| `scripts/smoke_test.sh` | 部署后冒烟测试脚本 |
+| `src/landppt/services/svg_to_pptx/` | 移植的 ppt-master 转换器（MIT） |
+| `template_examples/` | 启动时自动导入的内置 PPT 模板（25 个） |
