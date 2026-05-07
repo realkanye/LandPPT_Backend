@@ -51,24 +51,12 @@ def reload_services():
     except Exception:
         pass
 
-    # Also reload research service if it exists
-    try:
-        from ..api.landppt_api import reload_research_service
-        reload_research_service()
-    except ImportError:
-        pass  # Research service may not be available
+    # research service reload is handled inline
 
     # Clear service instances to force recreation with new config
     _ppt_service = None
     _project_manager = None
     _ppt_services_by_user.clear()
-
-    # Also reload PDF to PPTX converter configuration
-    try:
-        from .pdf_to_pptx_converter import reload_pdf_to_pptx_converter
-        reload_pdf_to_pptx_converter()
-    except ImportError:
-        pass  # PDF converter may not be available
 
 # Backward compatibility - create module-level variables that get updated
 def _update_module_vars():

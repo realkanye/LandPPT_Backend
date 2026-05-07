@@ -147,6 +147,8 @@ class PPTProject(BaseModel):
     outline: Optional[Dict[str, Any]] = None  # Changed to Dict for flexibility
     slides_html: Optional[str] = None
     slides_data: Optional[List[Dict[str, Any]]] = None  # Individual slide data
+    # One SVG document per slide, source-of-truth for editable-PPTX export.
+    slides_svg: Optional[List[str]] = None
     confirmed_requirements: Optional[Dict[str, Any]] = None  # Confirmed requirements from step 1
     project_metadata: Optional[Dict[str, Any]] = None  # 项目元数据，包括选择的模板ID等
     todo_board: Optional[TodoBoard] = None

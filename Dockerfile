@@ -29,7 +29,6 @@ RUN set -eux; \
     ca-certificates \
     curl \
     git \
-    libpq-dev \
     libatomic1 \
     ; \
     rm -rf /var/lib/apt/lists/*
@@ -51,7 +50,7 @@ COPY src/ ./src/
 
 # Install Python dependencies using uv
 # uv sync will create venv at UV_PROJECT_ENVIRONMENT and install all dependencies
-RUN uv sync --active --no-dev --frozen --extra-index-url=https://pypi.apryse.com && \
+RUN uv sync --active --no-dev --frozen && \
     # Clean up build artifacts
     find /opt/venv -name "*.pyc" -delete && \
     find /opt/venv -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -98,7 +97,6 @@ RUN set -eux; \
     ffmpeg \
     poppler-utils \
     libmagic1 \
-    libpq5 \
     ca-certificates \
     curl \
     wget \

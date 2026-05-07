@@ -9,7 +9,7 @@ import base64
 from collections import Counter
 from typing import Dict, Any, List, Optional
 from io import BytesIO
-from sqlalchemy.exc import IntegrityError
+from pymongo.errors import DuplicateKeyError as IntegrityError
 
 from ...ai import get_ai_provider, get_role_provider, AIMessage, MessageRole
 from ...ai.base import TextContent, ImageContent, MessageContentType

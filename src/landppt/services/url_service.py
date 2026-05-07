@@ -11,7 +11,14 @@ from typing import Optional
 from urllib.parse import urlencode
 
 from dotenv import load_dotenv
-from ..auth.request_context import current_base_url
+
+
+class _NullContextVar:
+    def get(self):
+        return None
+
+
+current_base_url = _NullContextVar()
 
 logger = logging.getLogger(__name__)
 

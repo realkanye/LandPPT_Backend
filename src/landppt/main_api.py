@@ -5,7 +5,7 @@ FastAPI-based REST API for PPT generation functionality
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse
 import uvicorn
 import asyncio
 import logging
@@ -20,6 +20,8 @@ from .api.models import (
     FileOutlineGenerationRequest, TemplateSelectionRequest,
     TemplateSelectionResponse, PPTScenario
 )
+from .api.v1 import router as v1_router
+from .database.startup_initialization import run_startup_initialization
 from .services.service_instances import get_ppt_service_for_user
 from .services.file_processor import FileProcessor
 from .core.config import ai_config, app_config
@@ -34,11 +36,20 @@ logging.getLogger('sqlalchemy').setLevel(logging.WARNING)
 # Create FastAPI app
 app = FastAPI(
     title="LandPPT API",
-    description="AI-powered PPT Generation REST API - Pure API Mode",
+    description=(
+        "AI-powered PPT Generation REST API\n\n"
+        "## 推荐使用 v1 接口\n\n"
+        "v1 接口支持**异步任务**模式，PPT 生成不阻塞 HTTP 请求：\n\n"
+        "1. `POST /v1/presentations` — 提交生成任务，返回 `job_id`\n"
+        "2. `GET  /v1/jobs/{job_id}` — 轮询状态（pending → running → completed）\n"
+        "3. `GET  /v1/presentations/{project_id}/download?format=html|pdf|pptx` — 下载结果\n\n"
+        "如需上传文档生成 PPT，先调用 `POST /v1/files/upload` 获取 `processed_content`，"
+        "再传给 `POST /v1/presentations` 的 `uploaded_content` 字段。"
+    ),
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    openapi_url="/openapi.json"
+    openapi_url="/openapi.json",
 )
 
 # Add CORS middleware - allow all origins for API mode
@@ -50,6 +61,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount v1 API router
+app.include_router(v1_router)
+
 # Service instances - use anonymous user for API-only mode
 ANONYMOUS_USER_ID = app_config.anonymous_user_id
 ppt_service = get_ppt_service_for_user(ANONYMOUS_USER_ID)
@@ -58,19 +72,29 @@ file_processor = FileProcessor()
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize application on startup"""
+    """Initialize database and run migrations on startup."""
     logger.info("=" * 60)
     logger.info("LandPPT API Server Starting...")
     logger.info(f"Mode: {'API-ONLY (No Auth)' if app_config.disable_auth else 'Standard'}")
     logger.info(f"AI Provider: {ai_config.default_ai_provider}")
     logger.info(f"Anonymous User ID: {ANONYMOUS_USER_ID}")
     logger.info("=" * 60)
+    try:
+        await run_startup_initialization()
+    except Exception as exc:
+        logger.error("Startup initialization failed: %s", exc)
+        raise
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup on shutdown"""
+    """Cleanup connections on shutdown."""
     logger.info("LandPPT API Server shutting down...")
+    try:
+        from .services.cache_service import close_cache_service
+        await close_cache_service()
+    except Exception:
+        pass
 
 
 # ============================================================================
@@ -443,32 +467,72 @@ async def export_html(project_id: str):
 
 @app.post("/projects/{project_id}/export/pdf", tags=["Export"])
 async def export_pdf(project_id: str):
-    """Export project as PDF"""
-    try:
-        pdf_path = await ppt_service.export_to_pdf(project_id)
-        return FileResponse(
-            path=pdf_path,
-            filename=f"{project_id}.pdf",
-            media_type="application/pdf"
-        )
-    except Exception as e:
-        logger.error(f"Error exporting PDF: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Export project as PDF (async job).
+
+    PDF generation via Playwright takes 30–120 s for a full deck.
+    This endpoint submits a background job and returns immediately.
+    Poll GET /v1/jobs/{job_id} for status, then download via
+    GET /v1/jobs/{job_id}/download once status == 'completed'.
+    """
+    from .services.background_tasks import get_task_manager
+    from .api.v1.presentations import _run_pdf_export
+
+    project = await ppt_service.project_manager.get_project(
+        project_id, user_id=ANONYMOUS_USER_ID
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.slides_data:
+        raise HTTPException(status_code=400, detail="PPT slides not generated yet")
+
+    task_manager = get_task_manager()
+    job_id = task_manager.submit_task(
+        "pdf_export",
+        _run_pdf_export,
+        project_id,
+        ANONYMOUS_USER_ID,
+        metadata={"project_id": project_id, "format": "pdf"},
+    )
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "message": "PDF export job submitted. Poll GET /v1/jobs/{job_id}; download GET /v1/jobs/{job_id}/download",
+    }
 
 
 @app.post("/projects/{project_id}/export/pptx", tags=["Export"])
 async def export_pptx(project_id: str):
-    """Export project as PPTX"""
-    try:
-        pptx_path = await ppt_service.export_to_pptx(project_id)
-        return FileResponse(
-            path=pptx_path,
-            filename=f"{project_id}.pptx",
-            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
-    except Exception as e:
-        logger.error(f"Error exporting PPTX: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Export project as a fully editable PPTX (async job).
+
+    Generates the .pptx directly from the project's stored ``slides_svg``
+    via the ported ppt-master converter — no commercial SDK required.
+    Returns a job_id immediately. Poll GET /v1/jobs/{job_id} for status,
+    then download via GET /v1/jobs/{job_id}/download.
+    """
+    from .services.background_tasks import get_task_manager
+    from .api.v1.presentations import _run_pptx_export
+
+    project = await ppt_service.project_manager.get_project(
+        project_id, user_id=ANONYMOUS_USER_ID
+    )
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.slides_data:
+        raise HTTPException(status_code=400, detail="PPT slides not generated yet")
+
+    task_manager = get_task_manager()
+    job_id = task_manager.submit_task(
+        "pptx_export",
+        _run_pptx_export,
+        project_id,
+        ANONYMOUS_USER_ID,
+        metadata={"project_id": project_id, "format": "pptx"},
+    )
+    return {
+        "job_id": job_id,
+        "status": "pending",
+        "message": "PPTX export job submitted. Poll GET /v1/jobs/{job_id}; download GET /v1/jobs/{job_id}/download",
+    }
 
 
 # ============================================================================

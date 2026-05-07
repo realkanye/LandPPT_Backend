@@ -174,28 +174,6 @@ class SlideStreamingService:
             except Exception as e:
                 logger.warning(f"Valkey lock acquisition failed, falling back: {e}")
 
-            # Fallback: PostgreSQL advisory lock (when cache is unavailable)
-            try:
-                from ...core.config import app_config
-                if str(app_config.database_url).startswith(("postgresql://", "postgres://")):
-                    from sqlalchemy import text
-                    from ...database.database import async_engine
-
-                    raw = hashlib.blake2b(project_id.encode("utf-8"), digest_size=8).digest()
-                    key = int.from_bytes(raw, "big", signed=False)
-                    if key >= 2**63:
-                        key -= 2**64
-
-                    conn = await async_engine.connect()
-                    res = await conn.execute(text("SELECT pg_try_advisory_lock(:key) AS locked"), {"key": key})
-                    acquired = bool(res.scalar())
-                    if acquired:
-                        return {"acquired": True, "kind": "db_advisory", "db_conn": conn, "db_key": key}
-                    await conn.close()
-                    return {"acquired": False, "kind": "db_advisory"}
-            except Exception as e:
-                logger.warning(f"DB advisory lock acquisition failed, falling back: {e}")
-
             # Last resort: local in-process lock (single worker only)
             if project_id not in self._slide_generation_locks:
                 self._slide_generation_locks[project_id] = asyncio.Lock()
@@ -212,19 +190,6 @@ class SlideStreamingService:
                 if cache and lock_key and getattr(cache, "is_connected", False):
                     try:
                         await cache.delete(lock_key)
-                    except Exception:
-                        pass
-            elif kind == "db_advisory":
-                conn = lock_info.get("db_conn")
-                key = lock_info.get("db_key")
-                if conn is not None and key is not None:
-                    try:
-                        from sqlalchemy import text
-                        await conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
-                    except Exception:
-                        pass
-                    try:
-                        await conn.close()
                     except Exception:
                         pass
 

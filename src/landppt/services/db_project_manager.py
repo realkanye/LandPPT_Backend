@@ -7,7 +7,6 @@ import time
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..api.models import (
     PPTProject, TodoBoard, TodoStage, ProjectListResponse,
@@ -164,6 +163,17 @@ class DatabaseProjectManager:
             if success:
                 logger.info(f"Saved slides for project {project_id}")
 
+            return success
+        finally:
+            await db_service.session.close()
+
+    async def save_project_slides_svg(self, project_id: str, slides_svg: List[str]) -> bool:
+        """Persist per-slide SVG documents (source-of-truth for editable PPTX export)."""
+        db_service = await self._get_db_service()
+        try:
+            success = await db_service.save_project_slides_svg(project_id, slides_svg)
+            if success:
+                logger.info(f"Saved {len(slides_svg)} SVG slides for project {project_id}")
             return success
         finally:
             await db_service.session.close()

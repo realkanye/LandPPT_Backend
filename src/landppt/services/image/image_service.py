@@ -23,7 +23,13 @@ from .adapters.ppt_prompt_adapter import PPTPromptAdapter, PPTSlideContext
 
 logger = logging.getLogger(__name__)
 
-from ...auth.request_context import current_user_id, USER_SCOPE_ALL
+class _NullContextVar:
+    def get(self):
+        return None
+
+
+current_user_id = _NullContextVar()
+USER_SCOPE_ALL = -1
 
 
 class ImageService:

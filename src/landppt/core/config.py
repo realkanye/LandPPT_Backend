@@ -107,10 +107,6 @@ class AIConfig(BaseSettings):
     research_max_content_length: int = Field(default=5000, env="RESEARCH_MAX_CONTENT_LENGTH")
     research_extraction_timeout: int = Field(default=30, env="RESEARCH_EXTRACTION_TIMEOUT")
 
-    # Apryse SDK Configuration (for PPTX export functionality)
-    apryse_license_key: Optional[str] = Field(default=None, env="APRYSE_LICENSE_KEY")
-    enable_apryse_pptx_export: bool = Field(default=False, env="ENABLE_APRYSE_PPTX_EXPORT")
-
     # Provider Selection
     default_ai_provider: str = Field(default="openai", env="DEFAULT_AI_PROVIDER")
     
@@ -508,7 +504,6 @@ def reload_ai_config():
     ai_config.enable_parallel_generation = os.environ.get('ENABLE_PARALLEL_GENERATION', str(ai_config.enable_parallel_generation)).lower() == 'true'
     ai_config.parallel_slides_count = int(os.environ.get('PARALLEL_SLIDES_COUNT', str(ai_config.parallel_slides_count)))
     ai_config.enable_auto_layout_repair = os.environ.get('ENABLE_AUTO_LAYOUT_REPAIR', str(ai_config.enable_auto_layout_repair)).lower() == 'true'
-    ai_config.enable_apryse_pptx_export = os.environ.get('ENABLE_APRYSE_PPTX_EXPORT', str(ai_config.enable_apryse_pptx_export)).lower() == 'true'
 
     # Update Tavily configuration
     ai_config.tavily_api_key = os.environ.get('TAVILY_API_KEY', ai_config.tavily_api_key)
@@ -530,8 +525,6 @@ def reload_ai_config():
     ai_config.research_max_content_length = int(os.environ.get('RESEARCH_MAX_CONTENT_LENGTH', str(ai_config.research_max_content_length)))
     ai_config.research_extraction_timeout = int(os.environ.get('RESEARCH_EXTRACTION_TIMEOUT', str(ai_config.research_extraction_timeout)))
 
-    ai_config.apryse_license_key = os.environ.get('APRYSE_LICENSE_KEY', ai_config.apryse_license_key)
-
 class AppConfig(BaseSettings):
     """Application configuration"""
 
@@ -544,8 +537,8 @@ class AppConfig(BaseSettings):
     debug: bool = Field(default=True, env="DEBUG")
     reload: bool = Field(default=True, env="RELOAD")
     
-    # Database Configuration - default to SQLite for standalone/local startup
-    database_url: str = Field(default="sqlite:///./landppt.db", env="DATABASE_URL")
+    # Database Configuration — MongoDB
+    mongodb_url: str = Field(default="mongodb://localhost:27017/landppt", env="MONGODB_URL")
     auto_migrate_on_startup: bool = Field(default=True, env="LANDPPT_AUTO_MIGRATE_ON_STARTUP")
     auto_migrate_fail_fast: bool = Field(default=True, env="LANDPPT_AUTO_MIGRATE_FAIL_FAST")
     auto_migrate_lock_timeout_seconds: int = Field(default=300, env="LANDPPT_AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS")
