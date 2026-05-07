@@ -176,14 +176,15 @@ class ProjectWorkflowStageService:
                 elif stage_id == "ppt_creation":
                     # New SVG-based pipeline (editable PPTX, ported from ppt-master).
                     # The legacy HTML-per-slide path under ``slide_streaming_service``
-                    # is no longer wired in here.
+                    # is no longer wired in here.  Project status is finalised by
+                    # the outer ``_execute_project_workflow`` loop once every
+                    # stage completes — no need to flip it here.
                     from .slide.svg_slide_generation_service import SVGSlideGenerationService
 
                     svg_service = SVGSlideGenerationService(self._service)
                     slides_svg = await svg_service.generate_slides_svg(
                         project_id, confirmed_requirements
                     )
-                    await self.project_manager.update_project_status(project_id, "completed")
                     return {
                         "slides_count": len(slides_svg),
                         "format": "svg",

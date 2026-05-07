@@ -35,8 +35,8 @@ dependencies = [
     "pypdf2>=3.0.1",
     "requests>=2.31.0",
     # Database libraries — MongoDB
-    "motor==3.3.2",   # async MongoDB driver
-    "beanie==1.26.0", # MongoDB ODM (Pydantic v2 compatible)
+    "motor>=3.7.0",   # async MongoDB driver
+    "beanie>=2.0.0",  # MongoDB ODM (uses get_pymongo_collection, requires 2.x)
     # Cache library
     "valkey>=6.0.0", # Valkey (Redis-compatible) cache
     # AI and LLM libraries
@@ -67,7 +67,7 @@ dependencies = [
     "langchain-community>=0.3.27",
     "edge-tts>=6.1.0",
     "resend>=2.21.0",
-    "pymongo==4.6.1",
+    "pymongo>=4.9.0",  # Beanie 2.x requires pymongo >= 4.9
     # Editable PPTX export pipeline (SVG → DrawingML, ported from ppt-master)
     "python-pptx>=0.6.21",
     "svglib>=1.5.0",
