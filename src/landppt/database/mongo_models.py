@@ -71,6 +71,9 @@ class ProjectDocument(Document):
     status: str = "draft"
     outline: Optional[Dict[str, Any]] = None
     slides_html: Optional[str] = None
+    # SVG documents (one per slide, in display order). Source-of-truth for
+    # the editable-PPTX export pipeline ported from ppt-master.
+    slides_svg: Optional[List[str]] = None
     confirmed_requirements: Optional[Dict[str, Any]] = None
     project_metadata: Optional[Dict[str, Any]] = None
     version: int = 1

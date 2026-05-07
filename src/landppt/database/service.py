@@ -223,6 +223,7 @@ class DatabaseService:
             outline=db_project.outline,
             slides_html=db_project.slides_html,
             slides_data=slides_data,
+            slides_svg=db_project.slides_svg,
             confirmed_requirements=db_project.confirmed_requirements,
             project_metadata=db_project.project_metadata,
             todo_board=todo_board,
@@ -525,6 +526,25 @@ class DatabaseService:
             await self.slide_repo.create_slides(records)
 
         result = await self.project_repo.update(project_id, {"slides_html": slides_html})
+        return result is not None
+
+    async def save_project_slides_svg(
+        self,
+        project_id: str,
+        slides_svg: List[str],
+    ) -> bool:
+        """Persist a list of per-slide SVG documents on the project.
+
+        ``slides_svg`` is the source-of-truth for the editable-PPTX export
+        pipeline; ordering must match ``slides_data`` / ``slides_html``.
+        """
+        effective = current_user_id.get()
+        if effective is not None:
+            owned = await self.project_repo.get_by_id(project_id, user_id=effective)
+            if not owned:
+                return False
+
+        result = await self.project_repo.update(project_id, {"slides_svg": list(slides_svg)})
         return result is not None
 
     async def save_single_slide(

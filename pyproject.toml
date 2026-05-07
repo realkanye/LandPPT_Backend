@@ -68,6 +68,11 @@ dependencies = [
     "edge-tts>=6.1.0",
     "resend>=2.21.0",
     "pymongo==4.6.1",
+    # Editable PPTX export pipeline (SVG → DrawingML, ported from ppt-master)
+    "python-pptx>=0.6.21",
+    "svglib>=1.5.0",
+    "reportlab>=4.0.0",
+    "lxml>=4.9.0",
 ]
 
 

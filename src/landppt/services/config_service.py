@@ -109,14 +109,6 @@ class ConfigService:
             "research_max_content_length": {"type": "number", "category": "generation_params", "default": "5000"},
             "research_extraction_timeout": {"type": "number", "category": "generation_params", "default": "30"},
 
-            "enable_apryse_pptx_export": {
-                "type": "boolean",
-                "category": "generation_params",
-                "default": "false",
-                "admin_only": True,
-            },
-            "apryse_license_key": {"type": "password", "category": "generation_params", "admin_only": True},
-            
             # Feature Flags
             "enable_network_mode": {"type": "boolean", "category": "feature_flags", "default": "true"},
             "enable_local_models": {"type": "boolean", "category": "feature_flags", "default": "false"},

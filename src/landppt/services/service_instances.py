@@ -58,13 +58,6 @@ def reload_services():
     _project_manager = None
     _ppt_services_by_user.clear()
 
-    # Also reload PDF to PPTX converter configuration
-    try:
-        from .pdf_to_pptx_converter import reload_pdf_to_pptx_converter
-        reload_pdf_to_pptx_converter()
-    except ImportError:
-        pass  # PDF converter may not be available
-
 # Backward compatibility - create module-level variables that get updated
 def _update_module_vars():
     """Update module-level variables for backward compatibility"""

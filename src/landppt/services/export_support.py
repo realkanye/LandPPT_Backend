@@ -24,32 +24,6 @@ from ..utils.thread_pool import run_blocking_io
 logger = logging.getLogger(__name__)
 
 
-def _coerce_bool(value) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    return str(value).strip().lower() in {"1", "true", "yes", "on"}
-
-
-async def _is_standard_pptx_export_enabled() -> bool:
-    """Return whether Apryse-based standard PPTX export is enabled system-wide."""
-    feature_enabled = _coerce_bool(getattr(ai_config, "enable_apryse_pptx_export", False))
-    license_key = str(getattr(ai_config, "apryse_license_key", "") or "").strip()
-
-    try:
-        from .db_config_service import get_db_config_service
-
-        config_service = get_db_config_service()
-        system_config = await config_service.get_all_config(user_id=None)
-        feature_enabled = _coerce_bool(system_config.get("enable_apryse_pptx_export", feature_enabled))
-        license_key = str(system_config.get("apryse_license_key") or license_key or "").strip()
-    except Exception as exc:
-        logger.warning("Failed to resolve Apryse PPTX export state from DB config: %s", exc)
-
-    return feature_enabled and bool(license_key)
-
-
 def _strip_default_port(host: str, scheme: str) -> str:
     host = (host or "").strip()
     scheme = (scheme or "").strip().lower()

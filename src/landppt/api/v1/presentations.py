@@ -113,58 +113,46 @@ async def _run_pdf_export(project_id: str, user_id: int) -> dict:
 
 async def _run_pptx_export(project_id: str, user_id: int) -> dict:
     """
-    Export a completed presentation to PPTX (PDF → Apryse conversion).
-    Requires ENABLE_APRYSE_PPTX_EXPORT=true and a valid APRYSE_LICENSE_KEY.
-    Returns the temp file path in the result dict.
+    Export a completed presentation to a fully editable PPTX.
+
+    Reads the project's ``slides_svg`` (one SVG document per slide) and runs
+    the ported ppt-master converter to produce native DrawingML shapes —
+    text boxes, geometry and images stay editable in PowerPoint / Keynote /
+    WPS.  No PDF intermediate, no commercial SDK, no license key.
     """
-    from ...services.export_support import _generate_pdf_with_pyppeteer
-    from ...services.pyppeteer_pdf_converter import get_pdf_converter
-    from ...services.pdf_to_pptx_converter import get_pdf_to_pptx_converter
+    from ...services.svg_pptx_exporter import export_slides_svg_to_pptx
 
     ppt_service = get_ppt_service_for_user(user_id)
     project = await ppt_service.project_manager.get_project(project_id, user_id=user_id)
     if not project:
         return {"success": False, "error": f"Project {project_id} not found"}
-    if not project.slides_data:
-        return {"success": False, "error": "PPT slides not generated yet"}
-
-    pdf_converter = get_pdf_converter()
-    if not pdf_converter.is_available():
-        return {"success": False, "error": "PDF generation service unavailable (Playwright not installed?)"}
-
-    pptx_converter = get_pdf_to_pptx_converter()
-    if not pptx_converter.is_available():
+    if not project.slides_svg:
         return {
             "success": False,
-            "error": "PPTX conversion unavailable. Set ENABLE_APRYSE_PPTX_EXPORT=true and configure APRYSE_LICENSE_KEY.",
+            "error": (
+                "PPT slides not generated yet (slides_svg is empty). "
+                "Wait for the generation job to reach status=completed."
+            ),
         }
 
-    tmp_pdf = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
-    tmp_pdf.close()
     tmp_pptx = tempfile.NamedTemporaryFile(suffix=".pptx", delete=False)
     tmp_pptx.close()
 
-    try:
-        pdf_ok = await _generate_pdf_with_pyppeteer(project, tmp_pdf.name, individual=False)
-        if not pdf_ok:
-            return {"success": False, "error": "PDF generation failed"}
-
-        ok, _result = await pptx_converter.convert_pdf_to_pptx_async(tmp_pdf.name, tmp_pptx.name)
-        if not ok:
-            return {"success": False, "error": "PDF → PPTX conversion failed"}
-
-        filename = f"{project.title or project_id}.pptx"
-        return {
-            "success": True,
-            "file_path": tmp_pptx.name,
-            "filename": filename,
-            "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        }
-    finally:
+    ok, result = await export_slides_svg_to_pptx(project.slides_svg, tmp_pptx.name)
+    if not ok:
         try:
-            os.unlink(tmp_pdf.name)
+            os.unlink(tmp_pptx.name)
         except OSError:
             pass
+        return {"success": False, "error": f"PPTX export failed: {result}"}
+
+    filename = f"{project.title or project_id}.pptx"
+    return {
+        "success": True,
+        "file_path": tmp_pptx.name,
+        "filename": filename,
+        "media_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -345,14 +333,26 @@ async def download_presentation(
             ),
         )
 
+    from ...services.svg_html_preview import build_html_preview
+
     ppt_service = get_ppt_service_for_user(_ANONYMOUS_USER_ID)
     project = await ppt_service.project_manager.get_project(project_id, user_id=_ANONYMOUS_USER_ID)
     if project is None:
         raise HTTPException(status_code=404, detail="PPT 不存在")
-    if not project.slides_html:
-        raise HTTPException(status_code=400, detail="PPT 尚未生成完成，请先确认任务 status=completed")
 
-    return HTMLResponse(content=project.slides_html)
+    # Prefer the SVG pipeline output; fall back to the legacy HTML field for
+    # any projects generated before the migration (still in MongoDB).
+    if project.slides_svg:
+        html = build_html_preview(
+            slides_svg=project.slides_svg,
+            title=project.title or project.topic or project_id,
+        )
+        return HTMLResponse(content=html)
+
+    if project.slides_html:
+        return HTMLResponse(content=project.slides_html)
+
+    raise HTTPException(status_code=400, detail="PPT 尚未生成完成，请先确认任务 status=completed")
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +368,7 @@ async def download_presentation(
         "- 通过 `GET /v1/jobs/{job_id}` 轮询状态\n"
         "- `status=completed` 后通过 `GET /v1/jobs/{job_id}/download` 下载文件\n\n"
         "**PDF** 依赖 Playwright（Chromium）渲染。"
-        " **PPTX** 额外依赖 Apryse SDK（需 `ENABLE_APRYSE_PPTX_EXPORT=true` 和有效 `APRYSE_LICENSE_KEY`）。"
+        " **PPTX** 直接由项目内置的 SVG → DrawingML 转换器生成，无需任何商业 SDK，输出原生可编辑形状。"
     ),
 )
 async def create_export(

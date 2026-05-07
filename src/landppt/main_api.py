@@ -502,9 +502,10 @@ async def export_pdf(project_id: str):
 
 @app.post("/projects/{project_id}/export/pptx", tags=["Export"])
 async def export_pptx(project_id: str):
-    """Export project as PPTX (async job).
+    """Export project as a fully editable PPTX (async job).
 
-    Requires ENABLE_APRYSE_PPTX_EXPORT=true and a valid APRYSE_LICENSE_KEY.
+    Generates the .pptx directly from the project's stored ``slides_svg``
+    via the ported ppt-master converter — no commercial SDK required.
     Returns a job_id immediately. Poll GET /v1/jobs/{job_id} for status,
     then download via GET /v1/jobs/{job_id}/download.
     """

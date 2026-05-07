@@ -167,6 +167,17 @@ class DatabaseProjectManager:
         finally:
             await db_service.session.close()
 
+    async def save_project_slides_svg(self, project_id: str, slides_svg: List[str]) -> bool:
+        """Persist per-slide SVG documents (source-of-truth for editable PPTX export)."""
+        db_service = await self._get_db_service()
+        try:
+            success = await db_service.save_project_slides_svg(project_id, slides_svg)
+            if success:
+                logger.info(f"Saved {len(slides_svg)} SVG slides for project {project_id}")
+            return success
+        finally:
+            await db_service.session.close()
+
     async def batch_save_slides(self, project_id: str, slides_data: List[Dict[str, Any]]) -> bool:
         """批量保存幻灯片 - 高效版本"""
         db_service = await self._get_db_service()
